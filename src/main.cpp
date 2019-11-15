@@ -11,6 +11,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
@@ -59,6 +60,7 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -99,14 +101,118 @@ int main() {
 
           json msgJson;
 
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-
           /**
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+					
+					// Time Step
+					double t_step = 0.02;
+					// target lane
+					int lane = 1;
+					// reference velocity (in m/s)
+					double ref_vel = 49.5 / 2.237;
 
+					double ref_x = car_x;
+					double ref_y = car_y;
+					double ref_yaw = deg2rad(car_yaw);
+					int prev_size = previous_path_x.size();
+					vector<double> next_x_vals;
+					vector<double> next_y_vals;
+					vector<double> rough_x_vals;
+					vector<double> rough_y_vals;
+
+					// Create initial 2 rough start points using current car position or previous path last 2 points
+					if (prev_size < 2) {
+						double car_x_prev = car_x - cos(car_yaw);
+						double car_y_prev = car_y - sin(car_yaw);
+
+						rough_x_vals.push_back(car_x_prev);
+						rough_x_vals.push_back(car_x);
+						rough_y_vals.push_back(car_y_prev);
+						rough_y_vals.push_back(car_y);
+					}
+					else {
+						double ref_x_prev, ref_y_prev;
+
+						ref_x = previous_path_x[prev_size - 1];
+						ref_y = previous_path_y[prev_size - 1];
+						ref_x_prev = previous_path_x[prev_size - 2];
+						ref_y_prev = previous_path_y[prev_size - 2];
+						ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+
+						rough_x_vals.push_back(ref_x_prev);
+						rough_x_vals.push_back(ref_x);
+						rough_y_vals.push_back(ref_y_prev);
+						rough_y_vals.push_back(ref_y);
+					}
+
+					// Pick 3 points away from the car to give a the coordinates for the spline
+					vector<double> start_xy = getXY(car_s + 30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> mid_xy		= getXY(car_s + 60, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> final_xy = getXY(car_s + 90, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					
+					rough_x_vals.push_back(start_xy[0]);
+					rough_x_vals.push_back(mid_xy[0]);
+					rough_x_vals.push_back(final_xy[0]);
+
+					rough_y_vals.push_back(start_xy[1]);
+					rough_y_vals.push_back(mid_xy[1]);
+					rough_y_vals.push_back(final_xy[1]);
+
+					// Shift car's reference angle to 0 degrees
+					for (int i = 0; i < rough_x_vals.size(); ++i) {
+						double shift_x = rough_x_vals[i] - ref_x;
+						double shift_y = rough_y_vals[i] - ref_y;
+
+						rough_x_vals[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw));
+						rough_y_vals[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw));
+					}
+					
+					tk::spline s;
+
+					// Create a spline using rough x-y coordinates
+					s.set_points(rough_x_vals, rough_y_vals);
+
+					// Add old path points to the new path first
+					for (int i = 0; i < prev_size; ++i) {
+						next_x_vals.push_back(previous_path_x[i]);
+						next_y_vals.push_back(previous_path_y[i]);
+					}
+
+					// How many points we want to have in the path
+					double path_size = 50;
+					// How far away we want to generate the path for
+					double target_x = 30;
+					double target_y = s(target_x);
+					double target_dist = sqrt(target_x * target_x + target_y * target_y);
+					// Number of time-steps it takes to reach target distance with reference velocity
+					double N = (target_dist) / (t_step * ref_vel);
+					// Step size in x-dimension per one time-step
+					double x_step = target_x / N;
+					double next_x = 0;
+					double next_y = 0;
+					double x_add_on = 0;
+
+					// Fill in the rest of the path points, after we already added old points
+					for (int i = 0; i < path_size - prev_size; ++i) {
+						next_x = x_add_on + x_step;
+						next_y = s(next_x);
+						x_add_on = next_x;
+
+						double x_ref = next_x;
+						double y_ref = next_y;
+
+						//Rotate back
+						next_x = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
+						next_y = (x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw));
+
+						next_x += ref_x;
+						next_y += ref_y;
+
+						next_x_vals.push_back(next_x);
+						next_y_vals.push_back(next_y);
+					}
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
