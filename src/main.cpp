@@ -1,3 +1,7 @@
+#define _CRT_SECURE_NO_WARNINGS
+#ifdef _WIN32
+#pragma comment(lib, "Ws2_32.lib")
+#endif
 #include <uWS/uWS.h>
 #include <fstream>
 #include <iostream>
@@ -24,7 +28,12 @@ int main() {
   vector<double> map_waypoints_dy;
 
   // Waypoint map to read from
-  string map_file_ = "../data/highway_map.csv";
+	#ifdef _WIN32
+		string map_file_ = "../../data/highway_map.csv";
+  #else
+		string map_file_ = "../data/highway_map.csv";
+  #endif
+	
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
@@ -125,12 +134,23 @@ int main() {
   });
 
   int port = 4567;
-  if (h.listen(port)) {
-    std::cout << "Listening to port " << port << std::endl;
-  } else {
-    std::cerr << "Failed to listen to port" << std::endl;
-    return -1;
-  }
+	#ifdef _WIN32
+		if (h.listen("127.0.0.1", port)) {
+			std::cout << "Listening to port " << port << std::endl;
+		}
+		else {
+			std::cerr << "Failed to listen to port" << std::endl;
+			return -1;
+		}
+	#else
+		if (h.listen(port)) {
+			std::cout << "Listening to port " << port << std::endl;
+		}
+		else {
+			std::cerr << "Failed to listen to port" << std::endl;
+			return -1;
+		}
+	#endif
   
   h.run();
 }
