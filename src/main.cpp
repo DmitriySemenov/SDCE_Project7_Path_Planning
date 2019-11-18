@@ -72,7 +72,7 @@ int main() {
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &t_step, &ref_vel, &cmd_vel]
+               &map_waypoints_dx,&map_waypoints_dy, &t_step, &ref_vel, &cmd_vel, &max_s]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -107,7 +107,7 @@ int main() {
 
           // Sensor Fusion Data, a list of all other cars on the same side 
           //   of the road.
-          auto sensor_fusion = j[1]["sensor_fusion"];
+          vector<vector<double>> sensor_fusion = j[1]["sensor_fusion"];
 
           json msgJson;
 
@@ -116,6 +116,11 @@ int main() {
            *   sequentially every .02 seconds
            */
 					
+					// parameters
+					const double slowdown_dist = 30.0;
+					const double lanechange_dist = 10.0;
+					const double clear_dist = 150;
+					const double max_speed = 49.5 / 2.237;
 					// car's lane
 					int car_lane = 1;
 
@@ -134,12 +139,14 @@ int main() {
 
 					// best lane
 					int best_lane = car_lane;
+					double best_lane_speed = 0;
+					bool avail_lanes[3] = { 0, 0, 0 };
 
 					// speed and distance to in s of the closest car ahead and behind our car for each lane
-					vector<double> closest_ahead_speed = { 0.0, 0.0, 0.0 };
-					vector<double> closest_ahead_dist = { 0.0, 0.0, 0.0 };
-					vector<double> closest_behind_speed = { 0.0, 0.0, 0.0 };
-					vector<double> closest_behind_dist = { 0.0, 0.0, 0.0 };
+					vector<double> closest_ahead_speed = { max_speed, max_speed, max_speed };
+					vector<double> closest_ahead_dist = { max_s, max_s, max_s };
+					vector<double> closest_behind_speed = { max_speed, max_speed, max_speed };
+					vector<double> closest_behind_dist = { max_s, max_s, max_s };
 
 					// reference position
 					double ref_x = car_x;
@@ -152,47 +159,82 @@ int main() {
 					vector<double> rough_x_vals;
 					vector<double> rough_y_vals;
 
+					FindClosestCars(sensor_fusion, sensor_fusion.size(), car_s, max_s, closest_ahead_speed, closest_ahead_dist, closest_behind_speed, closest_behind_dist);
+
 					// check if there is a car in front that is too close
+					// maintain speed of the car ahead, once get too close
 					bool too_close = false;
 
-					// find the closest car ahead and behind our car
-					for (int i = 0; i < sensor_fusion.size(); ++i) {
-						
-						float d = sensor_fusion[i][6];
-						double vx = sensor_fusion[i][3];
-						double vy = sensor_fusion[i][4];
-						double check_car_speed = sqrt(vx * vx + vy * vy);
-						double check_car_s = sensor_fusion[i][5];
-						
-						// Account for wrapping around max_s
-						check_car_s += (double)prev_size * t_step * check_car_speed;
-						// Calculate distance, accounting for wrapping around max_s
-
-						for (int lane = 0; lane < 3; ++lane) {
-							// for every lane, find the car closest ahead and behind of us
-							if (d < (2 + 4 * lane + 2) && d >(2 + 4 * lane - 2)) {
-
-								if (check_car_s >= car_s) {
-
-									// maintain speed of the car ahead, once get too close
-									if ((check_car_s - car_s) < 40 && lane == car_lane) {
-										ref_vel = check_car_speed;
-										too_close = true;
-									}
-								}	
-
-							}
-						}
-
+					if (closest_ahead_dist[car_lane] < slowdown_dist) {
+						ref_vel = closest_ahead_speed[car_lane];
+						too_close = true;
 					}
 
-					// find the best lane, based on the closest cars ahead in each lane
-
-					// check available lanes for lane changes, based on current lane and cars in adjacent lanes
-
-					// adjust the target lane based on best lane and available lanes (keep same, if none are available)
+					
+					// find best lane
+					// if current lane is clear or has top speed, keep current lane
+					if (closest_ahead_speed[car_lane] >= max_speed || closest_ahead_dist[car_lane] >= clear_dist) {
+						best_lane_speed = closest_ahead_speed[car_lane];
+						best_lane = car_lane;
+					}
+					else {
+						for (int lane = 0; lane < 3; ++lane) {
+							// find the best lane, based on the closest cars ahead in each lane
+							if (best_lane_speed < closest_ahead_speed[lane] || closest_ahead_dist[lane] >= clear_dist) {
+								best_lane_speed = closest_ahead_speed[lane];
+								best_lane = lane;
+							}
+							// check available lanes for lane changes, based on current lane and cars in adjacent lanes
+							if (closest_ahead_dist[lane] > lanechange_dist&& closest_behind_dist[lane] > lanechange_dist) {
+								avail_lanes[lane] = 1;
+							}
+						}
+					}
 					
 
+					// adjust the target lane based on best lane and available lanes (keep same, if none are available)
+					for (int lane = 0; lane < 3; ++lane) {
+						// check that best lane is available
+						if (lane == best_lane && avail_lanes[best_lane]) {
+							// for the left lane, can only move to middle lane or stay
+							if (car_lane == 0) {
+								if (best_lane == 0 || best_lane == 1) {
+									target_lane = best_lane;
+								}
+								// change target to lane next to current lane to get closer to target
+								else {
+									if (avail_lanes[1]) {
+										target_lane = 1;
+									}
+								}
+							}
+							// for middle lane, can move to any lane, if they are available
+							else if (car_lane == 1) {
+								target_lane = best_lane;
+							}
+							// for the right lane, can only move to middle lane or stay
+							else {
+								if (best_lane == 2 || best_lane == 1) {
+									target_lane = best_lane;
+								}
+								// change target to lane next to current lane to get closer to target
+								else {
+									if (avail_lanes[1]) {
+										target_lane = 1;
+									}
+								}
+							}
+						}
+					}
+
+					std::cout << "Best: " << best_lane << " ";
+					std::cout << "Target: " << target_lane << " ";
+					std::cout << "L0 S: " << closest_ahead_speed[0] * 2.237 << " ";
+					std::cout << "L1 S: " << closest_ahead_speed[1] * 2.237 << " ";
+					std::cout << "L2 S: " << closest_ahead_speed[2] * 2.237 << " ";
+					std::cout << "L0 D: " << closest_ahead_dist[0] << " ";
+					std::cout << "L1 D: " << closest_ahead_dist[1] << " ";
+					std::cout << "L2 D: " << closest_ahead_dist[2] << " \r";
 
 					// if no cars are too close in front, speed up to target speed
 					if (too_close == false)
@@ -206,8 +248,6 @@ int main() {
 						cmd_vel -= min(0.18, (cmd_vel - ref_vel));
 					}
 
-					std::cout << "Target Speed: " << ref_vel * 2.237 << " MPH.";
-					std::cout << "Commanded Speed: " << cmd_vel * 2.237 << " MPH. \r";
 
 					// Create initial 2 rough start points using current car position or previous path last 2 points
 					if (prev_size < 2) {
@@ -235,9 +275,10 @@ int main() {
 					}
 
 					// Pick 3 points away from the car to give coordinates for the spline
-					vector<double> start_xy = getXY(car_s + 30, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> mid_xy		= getXY(car_s + 60, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> final_xy = getXY(car_s + 90, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					// !!!!!!!!! PROTECT FOR MAX_S !!!!!!!!!!!!!!!!!!
+					vector<double> start_xy = getXY(car_s + 30, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> mid_xy		= getXY(car_s + 60, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> final_xy = getXY(car_s + 90, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 					
 					rough_x_vals.push_back(start_xy[0]);
 					rough_x_vals.push_back(mid_xy[0]);

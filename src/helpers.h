@@ -156,4 +156,48 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   return {x,y};
 }
 
+void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, double main_car_s, double max_s,
+	vector<double>& car_ahead_speed, vector<double>& car_ahead_dist,
+	vector<double>& car_behind_speed, vector<double>& car_behind_dist) {
+
+
+	// find the closest car ahead and behind our car
+	for (int i = 0; i < sensed_cars_count; ++i) {
+
+		double d = sensed_cars[i][6];
+		double vx = sensed_cars[i][3];
+		double vy = sensed_cars[i][4];
+		double check_car_speed = sqrt(vx * vx + vy * vy);
+		double check_car_s = sensed_cars[i][5];
+		double check_car_dist = max_s;
+
+		// !!!!!!!!! PROTECT FOR MAX_S !!!!!!!!!!!!!!!!!!
+		
+		for (int lane = 0; lane < 3; ++lane) {
+			// for every lane, find the car closest ahead and behind of us
+			if (d < (2.0 + 4.0 * lane + 2.0) && d >(2.0 + 4.0 * lane - 2.0)) {
+				
+				// car ahead
+				if (check_car_s >= main_car_s) {
+					check_car_dist = check_car_s - main_car_s;
+					if (check_car_dist < car_ahead_dist[lane]) {
+						car_ahead_dist[lane] = check_car_dist;
+						car_ahead_speed[lane] = check_car_speed;
+					}
+				}
+				// car behind
+				else {
+					check_car_dist = main_car_s - check_car_s;
+					if (check_car_dist < car_behind_dist[lane]) {
+						car_behind_dist[lane] = check_car_dist;
+						car_behind_speed[lane] = check_car_speed;
+					}
+				}
+
+			}
+		}
+
+	}
+
+}
 #endif  // HELPERS_H
