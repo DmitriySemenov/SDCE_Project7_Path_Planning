@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <algorithm> 
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
@@ -17,6 +18,7 @@
 using nlohmann::json;
 using std::string;
 using std::vector;
+using std::min;
 
 int main() {
   uWS::Hub h;
@@ -37,6 +39,14 @@ int main() {
 	
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
+
+	// Time Step
+	double t_step = 0.02;
+
+	// target velocity (in m/s)
+	double ref_vel = 49.5 / 2.237;
+	// commanded velocity
+	double cmd_vel = 0.2;
 
   std::ifstream in_map_(map_file_.c_str(), std::ifstream::in);
 
@@ -62,7 +72,7 @@ int main() {
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+               &map_waypoints_dx,&map_waypoints_dy, &t_step, &ref_vel, &cmd_vel]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -106,21 +116,98 @@ int main() {
            *   sequentially every .02 seconds
            */
 					
-					// Time Step
-					double t_step = 0.02;
-					// target lane
-					int lane = 1;
-					// reference velocity (in m/s)
-					double ref_vel = 49.5 / 2.237;
+					// car's lane
+					int car_lane = 1;
 
+					if (car_d >= 0 && car_d < 4) {
+						car_lane = 0;
+					}
+					else if (car_d >= 4 && car_d < 8) {
+						car_lane = 1;
+					}
+					else {
+						car_lane = 2;
+					}
+
+					// target lane
+					int target_lane = car_lane;
+
+					// best lane
+					int best_lane = car_lane;
+
+					// speed and distance to in s of the closest car ahead and behind our car for each lane
+					vector<double> closest_ahead_speed = { 0.0, 0.0, 0.0 };
+					vector<double> closest_ahead_dist = { 0.0, 0.0, 0.0 };
+					vector<double> closest_behind_speed = { 0.0, 0.0, 0.0 };
+					vector<double> closest_behind_dist = { 0.0, 0.0, 0.0 };
+
+					// reference position
 					double ref_x = car_x;
 					double ref_y = car_y;
 					double ref_yaw = deg2rad(car_yaw);
+
 					int prev_size = previous_path_x.size();
 					vector<double> next_x_vals;
 					vector<double> next_y_vals;
 					vector<double> rough_x_vals;
 					vector<double> rough_y_vals;
+
+					// check if there is a car in front that is too close
+					bool too_close = false;
+
+					// find the closest car ahead and behind our car
+					for (int i = 0; i < sensor_fusion.size(); ++i) {
+						
+						float d = sensor_fusion[i][6];
+						double vx = sensor_fusion[i][3];
+						double vy = sensor_fusion[i][4];
+						double check_car_speed = sqrt(vx * vx + vy * vy);
+						double check_car_s = sensor_fusion[i][5];
+						
+						// Account for wrapping around max_s
+						check_car_s += (double)prev_size * t_step * check_car_speed;
+						// Calculate distance, accounting for wrapping around max_s
+
+						for (int lane = 0; lane < 3; ++lane) {
+							// for every lane, find the car closest ahead and behind of us
+							if (d < (2 + 4 * lane + 2) && d >(2 + 4 * lane - 2)) {
+
+								if (check_car_s >= car_s) {
+
+									// maintain speed of the car ahead, once get too close
+									if ((check_car_s - car_s) < 40 && lane == car_lane) {
+										ref_vel = check_car_speed;
+										too_close = true;
+									}
+								}	
+
+							}
+						}
+
+					}
+
+					// find the best lane, based on the closest cars ahead in each lane
+
+					// check available lanes for lane changes, based on current lane and cars in adjacent lanes
+
+					// adjust the target lane based on best lane and available lanes (keep same, if none are available)
+					
+
+
+					// if no cars are too close in front, speed up to target speed
+					if (too_close == false)
+						ref_vel = 49.5 / 2.237;
+
+					// accelerate or slow down with 0.18 m/s / 0.02 s = 9 m/s^2 maximum accel or decel
+					if (cmd_vel < ref_vel) {
+						cmd_vel += min(0.18, (ref_vel - cmd_vel));
+					}
+					else {
+						cmd_vel -= min(0.18, (cmd_vel - ref_vel));
+					}
+
+					std::cout << "Target Speed: " << ref_vel * 2.237 << " MPH.";
+					std::cout << "Commanded Speed: " << cmd_vel * 2.237 << " MPH. \r";
 
 					// Create initial 2 rough start points using current car position or previous path last 2 points
 					if (prev_size < 2) {
@@ -147,10 +234,10 @@ int main() {
 						rough_y_vals.push_back(ref_y);
 					}
 
-					// Pick 3 points away from the car to give a the coordinates for the spline
-					vector<double> start_xy = getXY(car_s + 30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> mid_xy		= getXY(car_s + 60, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> final_xy = getXY(car_s + 90, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					// Pick 3 points away from the car to give coordinates for the spline
+					vector<double> start_xy = getXY(car_s + 30, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> mid_xy		= getXY(car_s + 60, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> final_xy = getXY(car_s + 90, (2 + 4 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 					
 					rough_x_vals.push_back(start_xy[0]);
 					rough_x_vals.push_back(mid_xy[0]);
@@ -187,7 +274,7 @@ int main() {
 					double target_y = s(target_x);
 					double target_dist = sqrt(target_x * target_x + target_y * target_y);
 					// Number of time-steps it takes to reach target distance with reference velocity
-					double N = (target_dist) / (t_step * ref_vel);
+					double N = (target_dist) / (t_step * cmd_vel);
 					// Step size in x-dimension per one time-step
 					double x_step = target_x / N;
 					double next_x = 0;
