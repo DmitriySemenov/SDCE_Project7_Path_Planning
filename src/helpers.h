@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include "Eigen-3.3/Eigen/Dense"
+#include "spline.h"
+#include "constants.h"
 
 // for convenience
 using std::string;
@@ -135,10 +137,33 @@ vector<double> getFrenet(double x, double y, double theta,
 vector<double> getXY(double s, double d, const vector<double> &maps_s, 
                      const vector<double> &maps_x, 
                      const vector<double> &maps_y) {
-  int prev_wp = -1;
 
-  while (s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1))) {
+	// Adjust maps_s coordinates, if s is less than the first waypoint's s coordinate
+	// Subtract MAXIMUM_S from s coordinate until the detecting decrease
+	// Decrease indicates that s wrapped around 0
+	vector<double> maps_s_mod = maps_s;
+
+	if (s < maps_s_mod[0]) {
+		double prev_maps_s = 0;
+		for (int i = 0; i < maps_s_mod.size(); ++i) {
+			if (maps_s_mod[i] > prev_maps_s) {
+				prev_maps_s = maps_s_mod[i];
+				maps_s_mod[i] -= MAXIMUM_S;
+			}
+			else {
+				// Found the point where s coordinate wrapped around 0
+				break;
+			}
+		}
+	}
+
+	int prev_wp = -1;
+
+  while (s > maps_s_mod[prev_wp+1]) {
     ++prev_wp;
+		if (prev_wp >= (int)(maps_s_mod.size() - 1)) {
+			break;
+		}
   }
 
   int wp2 = (prev_wp+1)%maps_x.size();
@@ -146,7 +171,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   double heading = atan2((maps_y[wp2]-maps_y[prev_wp]),
                          (maps_x[wp2]-maps_x[prev_wp]));
   // the x,y,s along the segment
-  double seg_s = (s-maps_s[prev_wp]);
+  double seg_s = (s- maps_s_mod[prev_wp]);
 
   double seg_x = maps_x[prev_wp]+seg_s*cos(heading);
   double seg_y = maps_y[prev_wp]+seg_s*sin(heading);
@@ -244,5 +269,25 @@ vector<double> JMT(vector<double>& start, vector<double>& end, double T) {
 	}
 
 	return result;
+}
+
+vector<double> smooth_waypoints(vector<double> frenet_point_s, vector<double> cart_point, double distance, int output_size) 
+{
+	// use the spline library to generate smooth waypoints
+	tk::spline s;
+	s.set_points(frenet_point_s, cart_point); 
+	vector<double> smooth_points;
+	double start_s = frenet_point_s[0];
+
+	if (frenet_point_s.size() != cart_point.size()) {
+		std::cout << "ERROR DURING SMOOTHING. SIZE MISMATCH" << std::endl;
+		return { 0 };
+	}
+
+	// Start at the first s-point and increment by distance amount of meters to get the next interpolated point
+	for (int i = 0; i < output_size; ++i) {
+		smooth_points.push_back(s(start_s + i * distance));
+	}
+	return smooth_points;
 }
 #endif  // HELPERS_H

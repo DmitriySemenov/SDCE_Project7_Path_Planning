@@ -10,8 +10,8 @@
 #include <algorithm> 
 #include "helpers.h"
 #include "json.hpp"
-#include "spline.h"
 #include "constants.h"
+#include "debug.h"
 
 // for convenience
 using nlohmann::json;
@@ -45,6 +45,9 @@ int main() {
 	// commanded velocity
 	double cmd_vel = 0.2;
 
+	// current time
+	double curr_time = 0;
+
   std::ifstream in_map_(map_file_.c_str(), std::ifstream::in);
 
   string line;
@@ -69,7 +72,7 @@ int main() {
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &cmd_vel, &max_s]
+               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &cmd_vel, &max_s, &curr_time]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -94,6 +97,8 @@ int main() {
           double car_d = j[1]["d"];
           double car_yaw = j[1]["yaw"];
           double car_speed = j[1]["speed"];
+					// Convert car_speed from MPH to m/s
+					car_speed /= 2.237;
 
           // Previous path data given to the Planner
           auto previous_path_x = j[1]["previous_path_x"];
@@ -115,7 +120,7 @@ int main() {
 					
 					/*
 					
-					Step 0: Generate smooth waypoints near car
+					Step 0: Generate smooth waypoints near car. Use spline library.
 
 					Step 1: Figure out time offset (to predict other car positions) based on prev path size
 									time_offset = prev_path_size * T_STEP
@@ -156,6 +161,100 @@ int main() {
 
 					*/
 
+					// Create data logging file for debug:
+					// Append to existing file
+					std::ofstream debug_log ("debug_log.csv", std::ofstream::app);
+					
+					curr_time += T_STEP;
+					#ifdef DEBUG_CARSTATS
+					debug_log << "Current Time: " << curr_time << std::endl;
+					debug_log << "Car X, Car Y, Car S, Car D, Car Yaw, Car Speed (m/s)" << std::endl;
+					debug_log << car_x << ", " << car_y << ", " << car_s << ", " << car_d << ", " << car_yaw << ", " << car_speed << std::endl;
+					#endif
+					// Step 0: Generate smooth waypoints near car. Use spline library.
+					/////////////////START STEP 0 ////////////////////////////////////
+
+					// Original waypoints to use for smooth waypoint generation
+					vector<double> orig_map_waypoints_x;
+					vector<double> orig_map_waypoints_y;
+					vector<double> orig_map_waypoints_s;
+					vector<double> orig_map_waypoints_dx;
+					vector<double> orig_map_waypoints_dy;
+					// New, smooth, waypoints
+					vector<double> smooth_map_waypoints_x;
+					vector<double> smooth_map_waypoints_y;
+					vector<double> smooth_map_waypoints_s;
+					vector<double> smooth_map_waypoints_dx;
+					vector<double> smooth_map_waypoints_dy;
+
+					int num_waypoints = map_waypoints_x.size();
+					int next_wp_idx = NextWaypoint(car_x, car_y, car_yaw, map_waypoints_x, map_waypoints_y);
+
+					for (int i = -ORIG_WP_BEHIND; i < ORIG_WP_AHEAD; ++i) {
+						// Account for underflow by adding num_waypoints and for overflow by doing % num_waypoints.
+						int orig_wp_idx = (next_wp_idx + i + num_waypoints) % num_waypoints;
+						
+						// Modify s position due to spline function requirement to have x-axis points monotonically increasing
+						// Let modified s coordinate go negative or above max for spline input, but adjust s coordinate later to be within (0, max_s) bounds
+						double orig_s = map_waypoints_s[orig_wp_idx];
+						double car_next_wp_s = map_waypoints_s[next_wp_idx];
+
+						if (i < 0 && orig_s > car_next_wp_s) {
+							orig_s -= max_s;
+						}
+						if (i > 0 && orig_s < car_next_wp_s) {
+							orig_s += max_s;
+						}
+						orig_map_waypoints_s.push_back(orig_s);
+						orig_map_waypoints_x.push_back(map_waypoints_x[orig_wp_idx]);
+						orig_map_waypoints_y.push_back(map_waypoints_y[orig_wp_idx]);
+						orig_map_waypoints_dx.push_back(map_waypoints_dx[orig_wp_idx]);
+						orig_map_waypoints_dy.push_back(map_waypoints_dy[orig_wp_idx]);
+					}
+
+					// Figure out number of smooth points, based on distance between points
+					int num_smooth_points = (orig_map_waypoints_s[orig_map_waypoints_s.size() - 1] - orig_map_waypoints_s[0]) / SMOOTH_WP_DIST;
+					double s_wp_start = orig_map_waypoints_s[0];
+					// Adjust starting s coordinate later to be within(0, max_s) bounds
+					if (s_wp_start < 0) {
+						s_wp_start += max_s;
+					}
+					if (s_wp_start > max_s) {
+						s_wp_start -= max_s;
+					}
+
+					for (int i = 0; i < num_smooth_points; i++) {
+						double new_smooth_s = s_wp_start + i * SMOOTH_WP_DIST;
+						// Adjust s coordinate to be less than max_s bound
+						if (new_smooth_s > max_s) {
+							new_smooth_s -= max_s;
+						}
+						smooth_map_waypoints_s.push_back(new_smooth_s);
+					}
+					smooth_map_waypoints_x = smooth_waypoints(orig_map_waypoints_s, orig_map_waypoints_x, SMOOTH_WP_DIST, num_smooth_points);
+					smooth_map_waypoints_y = smooth_waypoints(orig_map_waypoints_s, orig_map_waypoints_y, SMOOTH_WP_DIST, num_smooth_points);
+					smooth_map_waypoints_dx = smooth_waypoints(orig_map_waypoints_s, orig_map_waypoints_dx, SMOOTH_WP_DIST, num_smooth_points);
+					smooth_map_waypoints_dy = smooth_waypoints(orig_map_waypoints_s, orig_map_waypoints_dy, SMOOTH_WP_DIST, num_smooth_points);
+
+					#ifdef DEBUG_WAYPOINTS
+
+					vector<double> car_smooth_xy = getXY(car_s, car_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					debug_log << "SMOOTH OUTPUT" << std::endl;
+					debug_log << "Car X, Car Y, Car S, Car D, Car Speed (m/s)" << std::endl;
+					debug_log << car_smooth_xy[0] << ", " << car_smooth_xy[1] << ", " << car_s << ", " << car_d << ", " << car_speed << std::endl;
+
+					debug_log << "modified original waypoints" << std::endl << "orig s, orig x, orig y, orig dx, orig dy" << std::endl;
+					for (int i = 0; i < orig_map_waypoints_s.size(); ++i) {
+						debug_log << orig_map_waypoints_s[i] << ", " << orig_map_waypoints_x[i] << ", " << orig_map_waypoints_y[i] << ", " << orig_map_waypoints_dx[i] << ", "<< orig_map_waypoints_dy[i] << std::endl;
+						}
+					debug_log << std::endl;
+
+					debug_log << "smooth waypoints" << std::endl << "smooth s, smooth x, smooth y, smooth dx, smooth dy" << std::endl;
+					for (int i = 0; i < smooth_map_waypoints_s.size(); ++i) {
+						debug_log << smooth_map_waypoints_s[i] << ", " << smooth_map_waypoints_x[i] << ", " << smooth_map_waypoints_y[i] << ", " << smooth_map_waypoints_dx[i] << ", " << smooth_map_waypoints_dy[i] << std::endl;
+					}
+					#endif
+					/////////////////END STEP 0 ////////////////////////////////////
 					// car's lane
 					int car_lane = 1;
 
@@ -310,10 +409,9 @@ int main() {
 					}
 
 					// Pick 3 points away from the car to give coordinates for the spline
-					// !!!!!!!!! PROTECT FOR MAX_S !!!!!!!!!!!!!!!!!!
-					vector<double> start_xy = getXY(car_s + 30, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> mid_xy		= getXY(car_s + 60, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-					vector<double> final_xy = getXY(car_s + 90, (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> start_xy = getXY(fmod(car_s + 30, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					vector<double> mid_xy		= getXY(fmod(car_s + 60, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					vector<double> final_xy = getXY(fmod(car_s + 90, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
 					
 					rough_x_vals.push_back(start_xy[0]);
 					rough_x_vals.push_back(mid_xy[0]);
@@ -381,11 +479,16 @@ int main() {
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+					
+					// Close log file
+					debug_log.close();
+
         }  // end "telemetry" if
       } else {
         // Manual driving
         std::string msg = "42[\"manual\",{}]";
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+
       }
     }  // end websocket if
   }); // end h.onMessage
