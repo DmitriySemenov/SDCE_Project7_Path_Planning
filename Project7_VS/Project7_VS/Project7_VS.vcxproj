@@ -157,6 +157,7 @@
     <Natvis Include="..\..\src\eigen.natvis" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\src\constants.h" />
     <ClInclude Include="..\..\src\helpers.h" />
     <ClInclude Include="..\..\src\json.hpp" />
     <ClInclude Include="..\..\src\spline.h" />

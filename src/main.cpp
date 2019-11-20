@@ -8,11 +8,10 @@
 #include <string>
 #include <vector>
 #include <algorithm> 
-#include "Eigen-3.3/Eigen/Core"
-#include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include "constants.h"
 
 // for convenience
 using nlohmann::json;
@@ -40,11 +39,9 @@ int main() {
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
 
-	// Time Step
-	double t_step = 0.02;
-
 	// target velocity (in m/s)
 	double ref_vel = 49.5 / 2.237;
+
 	// commanded velocity
 	double cmd_vel = 0.2;
 
@@ -72,7 +69,7 @@ int main() {
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &t_step, &ref_vel, &cmd_vel, &max_s]
+               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &cmd_vel, &max_s]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -116,11 +113,49 @@ int main() {
            *   sequentially every .02 seconds
            */
 					
-					// parameters
-					const double slowdown_dist = 30.0;
-					const double lanechange_dist = 10.0;
-					const double clear_dist = 150;
-					const double max_speed = 49.5 / 2.237;
+					/*
+					
+					Step 0: Generate smooth waypoints near car
+
+					Step 1: Figure out time offset (to predict other car positions) based on prev path size
+									time_offset = prev_path_size * T_STEP
+									Generate predicitons of new state for each car, including our car:
+										car_state = end point of prev path converted from (x,y) to (s,d)
+										other_car_state = use const velocity & constant lane and predict for time_offset seconds from current position
+
+					Step 2: Based on car_position in (s,d) figure out available operating_state such as Keep Lane (KL), Lane Change Left (LCL), Lane Change Right (LCR)
+									Available operating_state is only limited by car_lane, so can't do LCL in left most lane (0) and can't do LCR in right most lane (2).
+
+					Step 3: For each available operating_state generate target position in (s,d) with T = 1 sec.
+									For KL: d = middle of car_lane, 
+											LCL: d = middle of the lane to the left of car_lane
+											LCR: d = middle of the lane to the right of car_lane
+									For all states: s = project s 1 second ahead using current speed.
+																	Where current speed can be calculated using last 2 path points in (s,d), if prev_path_size > 1.
+																	If prev_path_size <= 1, use our_car_speed
+					Step 4: For each state target s and d (s_t, d_t), generate (RND_TGT_COUNT) number of randomized target states (s_r, d_r) using gaussian distribution.
+									Mu = s_t or d_t; Sigma = Use constants from constants file.
+
+					Step 5: For each (s_r, d_r) generate JMT coefficients for car_s -> s_r and car_d -> d_r, assuming TRAJ_TIME second(s) time for reaching target.
+
+					Step 6: Calculate total cost for each set of JMT coeff. Use original (s_t, d_t) for each state.
+								cost function:			weight:
+								s_diff_cost					++
+								d_diff_cost					++++
+								t_diff_cost					++
+								average_spd_cost		+++
+								max_jerk_cost				+++++
+								collision_cost			+++++
+								buffer_cost					++
+								max_accel_cost			+++++
+
+					Step 7: Find minimum cost trajectory coefficients
+					Step 8: Using minimum cost coefficiencts, generate s and d targets for the next TRAJ_TIME second(s) using T_STEP time step.
+					Step 9: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
+									Use conversion function to convert from (s,d) to (x,y) and smoothed our waypoints.
+
+					*/
+
 					// car's lane
 					int car_lane = 1;
 
@@ -143,9 +178,9 @@ int main() {
 					bool avail_lanes[3] = { 0, 0, 0 };
 
 					// speed and distance to in s of the closest car ahead and behind our car for each lane
-					vector<double> closest_ahead_speed = { max_speed, max_speed, max_speed };
+					vector<double> closest_ahead_speed = { MAX_SPEED, MAX_SPEED, MAX_SPEED };
 					vector<double> closest_ahead_dist = { max_s, max_s, max_s };
-					vector<double> closest_behind_speed = { max_speed, max_speed, max_speed };
+					vector<double> closest_behind_speed = { MAX_SPEED, MAX_SPEED, MAX_SPEED };
 					vector<double> closest_behind_dist = { max_s, max_s, max_s };
 
 					// reference position
@@ -173,7 +208,7 @@ int main() {
 					
 					// find best lane
 					// if current lane is clear or has top speed, keep current lane
-					if (closest_ahead_speed[car_lane] >= max_speed || closest_ahead_dist[car_lane] >= clear_dist) {
+					if (closest_ahead_speed[car_lane] >= MAX_SPEED || closest_ahead_dist[car_lane] >= clear_dist) {
 						best_lane_speed = closest_ahead_speed[car_lane];
 						best_lane = car_lane;
 					}
@@ -308,14 +343,12 @@ int main() {
 						next_y_vals.push_back(previous_path_y[i]);
 					}
 
-					// How many points we want to have in the path
-					double path_size = 50;
 					// How far away we want to generate the path for
 					double target_x = 30;
 					double target_y = s(target_x);
 					double target_dist = sqrt(target_x * target_x + target_y * target_y);
 					// Number of time-steps it takes to reach target distance with reference velocity
-					double N = (target_dist) / (t_step * cmd_vel);
+					double N = (target_dist) / (T_STEP * cmd_vel);
 					// Step size in x-dimension per one time-step
 					double x_step = target_x / N;
 					double next_x = 0;
@@ -323,7 +356,7 @@ int main() {
 					double x_add_on = 0;
 
 					// Fill in the rest of the path points, after we already added old points
-					for (int i = 0; i < path_size - prev_size; ++i) {
+					for (int i = 0; i < PATH_SIZE - prev_size; ++i) {
 						next_x = x_add_on + x_step;
 						next_y = s(next_x);
 						x_add_on = next_x;
