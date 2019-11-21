@@ -169,7 +169,9 @@ int main() {
 					// Append to existing file
 					std::ofstream debug_log ("debug_log.csv", std::ofstream::app);
 					
-					curr_time += T_STEP;
+					if (previous_path_x.size() > 0)
+						curr_time += (PATH_SIZE - previous_path_x.size())* T_STEP;
+
 					#ifdef DEBUG_CARSTATS
 					debug_log << "Current Time: " << curr_time << std::endl;
 					debug_log << "Car X, Car Y, Car S, Car D, Car Yaw, Car Speed (m/s)" << std::endl;
@@ -217,7 +219,7 @@ int main() {
 					}
 
 					// Figure out number of smooth points, based on distance between points
-					int num_smooth_points = (orig_map_waypoints_s[orig_map_waypoints_s.size() - 1] - orig_map_waypoints_s[0]) / SMOOTH_WP_DIST;
+					int num_smooth_points = (int)((orig_map_waypoints_s[orig_map_waypoints_s.size() - 1] - orig_map_waypoints_s[0]) / SMOOTH_WP_DIST);
 					double s_wp_start = orig_map_waypoints_s[0];
 					// Adjust starting s coordinate later to be within(0, max_s) bounds
 					if (s_wp_start < 0) {
@@ -352,7 +354,7 @@ int main() {
 					// Initialization and prediction of other cars
 					vector<Vehicle> other_veh;
 
-					for (int i = 0; i < sensor_fusion.size(); ++i) {
+					for (unsigned int i = 0; i < sensor_fusion.size(); ++i) {
 						double other_veh_s = sensor_fusion[i][5];
 						double vx = sensor_fusion[i][3];
 						double vy = sensor_fusion[i][4];
@@ -365,8 +367,35 @@ int main() {
 						other_veh.push_back(Vehicle(other_veh_s, other_veh_s_dot, other_veh_s_doubledot, other_veh_d, other_veh_d_dot, other_veh_d_doubledot));
 						other_veh[i].generate_predictions(time_offset);
 					}
+
 					////////////// END STEP 1   ////////////////////////////////////
-					
+					////////////// START STEP 2   //////////////////////////////////
+					/*
+					Step 2: Based on our_veh position in(s, d) and other_veh predictions, figure out available operating_state such as Keep Lane(KL), Lane Change Left(LCL), Lane Change Right(LCR)
+						Can't do LCL in left most lane (0) and can't do LCR in right most lane(2).
+					*/
+
+					our_veh.upd_available_states(other_veh);
+					#ifdef DEBUG_CARPRED
+					debug_log << "Predict Time: " << (curr_time + time_offset) << std::endl;
+
+					debug_log << "Our Pred S, Our Pred D, Our Pred S_D, Our Pred S_DD, Our Pred D_D, Our Pred D_DD" << std::endl;
+					debug_log << our_veh.s << ", " << our_veh.d << ", " << our_veh.s_dot << ", " << our_veh.s_doubledot << ", " << our_veh.d_dot << ", " << our_veh.d_doubledot << std::endl;
+
+					debug_log << "Other Cars (S & Lane):" << std::endl;
+					debug_log << other_veh[0].predictions[0].s << ", " << other_veh[0].predictions[0].lane;
+					for (unsigned int i = 1; i < other_veh.size(); ++i)
+						debug_log << ", " << other_veh[i].predictions[0].s << ", " << other_veh[i].predictions[0].lane;
+					debug_log << std::endl;
+
+					debug_log << "Our Lane, Available States:" << std::endl;
+					debug_log << our_veh.lane;
+					for (unsigned int i = 0; i < our_veh.available_states.size(); ++i)
+						debug_log << ", " << our_veh.available_states[i];
+					debug_log << std::endl;
+					#endif
+					////////////// END STEP 2   ////////////////////////////////////
+
 					// car's lane
 					int car_lane = 1;
 
@@ -437,7 +466,7 @@ int main() {
 								best_lane = lane;
 							}
 							// check available lanes for lane changes, based on current lane and cars in adjacent lanes
-							if (closest_ahead_dist[lane] > lanechange_dist&& closest_behind_dist[lane] > lanechange_dist) {
+							if (closest_ahead_dist[lane] > LANECHG_DIST && closest_behind_dist[lane] > LANECHG_DIST) {
 								avail_lanes[lane] = 1;
 							}
 						}
@@ -548,7 +577,7 @@ int main() {
 					rough_y_vals.push_back(final_xy[1]);
 
 					// Shift car's reference angle to 0 degrees
-					for (int i = 0; i < rough_x_vals.size(); ++i) {
+					for (unsigned int i = 0; i < rough_x_vals.size(); ++i) {
 						double shift_x = rough_x_vals[i] - ref_x;
 						double shift_y = rough_y_vals[i] - ref_y;
 
@@ -580,7 +609,7 @@ int main() {
 					double x_add_on = 0;
 
 					// Fill in the rest of the path points, after we already added old points
-					for (int i = 0; i < PATH_SIZE - prev_size; ++i) {
+					for (unsigned int i = 0; i < PATH_SIZE - prev_size; ++i) {
 						next_x = x_add_on + x_step;
 						next_y = s(next_x);
 						x_add_on = next_x;
@@ -599,6 +628,18 @@ int main() {
 						next_y_vals.push_back(next_y);
 					}
 
+					#ifdef DEBUG_NEXTPATH
+					debug_log << "Next X Vals:" << std::endl;
+					debug_log << next_x_vals[0];
+					for (unsigned int i = 1; i < next_x_vals.size(); ++i)
+						debug_log << ", " << next_x_vals[i];
+					debug_log << std::endl;
+					debug_log << "Next Y Vals:" << std::endl;
+					debug_log << next_y_vals[0];
+					for (unsigned int i = 1; i < next_y_vals.size(); ++i)
+						debug_log << ", " << next_y_vals[i];
+					debug_log << std::endl;
+					#endif
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 

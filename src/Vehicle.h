@@ -12,12 +12,14 @@ using std::vector;
 class Vehicle {
 public:
 
+	// Variables
 	double s;
 	double s_dot;
 	double s_doubledot;
 	double d;
 	double d_dot;
 	double d_doubledot;
+	unsigned int lane;
 	string state;
 	vector<string> available_states;
 	vector<double> s_traj_coeffs, d_traj_coeffs;
@@ -32,6 +34,10 @@ public:
 	// Destructor
 	virtual ~Vehicle();
 
+	// Functions
+	void upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ahead_dist)[3], double (&car_behind_dist)[3]);
+	void upd_lane(double d_curr);
+	void upd_available_states(vector<Vehicle> &other_vehicles);
 	void generate_predictions(double time_offset);
 };
 

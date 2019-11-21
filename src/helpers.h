@@ -52,7 +52,7 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x,
   double closestLen = 100000; //large number
   int closestWaypoint = 0;
 
-  for (int i = 0; i < maps_x.size(); ++i) {
+  for (unsigned int i = 0; i < maps_x.size(); ++i) {
     double map_x = maps_x[i];
     double map_y = maps_y[i];
     double dist = distance(x,y,map_x,map_y);
@@ -150,7 +150,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 
 	if (s < maps_s_mod[0]) {
 		double prev_maps_s = 0;
-		for (int i = 0; i < maps_s_mod.size(); ++i) {
+		for (unsigned int i = 0; i < maps_s_mod.size(); ++i) {
 			if (maps_s_mod[i] > prev_maps_s) {
 				prev_maps_s = maps_s_mod[i];
 				maps_s_mod[i] -= MAXIMUM_S;
@@ -194,6 +194,8 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   return {x,y};
 }
 
+
+/////////////REMOVE THIS LATER/////////////////////////
 void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, double main_car_s, double max_s,
 	vector<double>& car_ahead_speed, vector<double>& car_ahead_dist,
 	vector<double>& car_behind_speed, vector<double>& car_behind_dist) {
