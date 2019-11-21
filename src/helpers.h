@@ -91,7 +91,8 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
 vector<double> getFrenet(double x, double y, double theta, 
                          const vector<double> &maps_x, 
-                         const vector<double> &maps_y) {
+                         const vector<double> &maps_y,
+												 const vector<double> &maps_s) {
   int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
 
   int prev_wp;
@@ -123,13 +124,17 @@ vector<double> getFrenet(double x, double y, double theta,
   }
 
   // calculate s value
-  double frenet_s = 0;
+  double frenet_s = maps_s[0];
   for (int i = 0; i < prev_wp; ++i) {
     frenet_s += distance(maps_x[i],maps_y[i],maps_x[i+1],maps_y[i+1]);
   }
 
   frenet_s += distance(0,0,proj_x,proj_y);
-
+	// Protect for over or underflow.
+	if (frenet_s > MAXIMUM_S)
+		frenet_s -= MAXIMUM_S;
+	if (frenet_s < 0)
+		frenet_s += MAXIMUM_S;
   return {frenet_s,frenet_d};
 }
 
@@ -140,7 +145,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 
 	// Adjust maps_s coordinates, if s is less than the first waypoint's s coordinate
 	// Subtract MAXIMUM_S from s coordinate until the detecting decrease
-	// Decrease indicates that s wrapped around 0
+	// Decrease indicates that s overflows
 	vector<double> maps_s_mod = maps_s;
 
 	if (s < maps_s_mod[0]) {
@@ -151,7 +156,7 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 				maps_s_mod[i] -= MAXIMUM_S;
 			}
 			else {
-				// Found the point where s coordinate wrapped around 0
+				// Found the point where s coordinate overflows
 				break;
 			}
 		}
@@ -161,7 +166,12 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
 
   while (s > maps_s_mod[prev_wp+1]) {
     ++prev_wp;
+		// protect for getting to the end of waypoints
 		if (prev_wp >= (int)(maps_s_mod.size() - 1)) {
+			break;
+		}
+		// protect for s coordinate overflowing
+		if (maps_s_mod[prev_wp + 1] < maps_s_mod[prev_wp]) {
 			break;
 		}
   }

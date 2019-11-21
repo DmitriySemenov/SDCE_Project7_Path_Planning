@@ -2,6 +2,7 @@
 #define CONSTANTS_H
 
 const double slowdown_dist = 30.0;
+const double brake_dist = 15.0;
 const double lanechange_dist = 10.0;
 const double clear_dist = 150;
 
@@ -13,7 +14,7 @@ const double ORIG_WP_BEHIND = 3;
 const double ORIG_WP_AHEAD = 5;
 
 // Distance between Smooth waypoints
-const double SMOOTH_WP_DIST = 5; // m
+const double SMOOTH_WP_DIST = 1; // m
 
 // Max vehicle speed
 const double MAX_SPEED = 49.5 / 2.237;
@@ -33,9 +34,16 @@ const double SIGMA_S = 10; // m
 const double SIGMA_D = 1; // m
 const double RND_TGT_COUNT = 10; 
 
-// Trajectory time
-const double TRAJ_TIME = 1; // sec
+// Path Time
+const double PATH_TIME = 1; // sec
 
 // How many points we want to have in the path
-const int PATH_SIZE = TRAJ_TIME/ T_STEP;
+const int PATH_SIZE = PATH_TIME / T_STEP;
+
+// Trajectory time (should be at least the same time as path time in order to generate points to fill the path)
+const double TRAJ_TIME = 1; // sec
+
+// How many points we want to have in the trajectory
+const int TRAJ_SIZE = TRAJ_TIME / T_STEP;
+
 #endif

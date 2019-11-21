@@ -12,6 +12,7 @@
 #include "json.hpp"
 #include "constants.h"
 #include "debug.h"
+#include "Vehicle.h"
 
 // for convenience
 using nlohmann::json;
@@ -48,6 +49,9 @@ int main() {
 	// current time
 	double curr_time = 0;
 
+	// Our vehicle
+	Vehicle our_veh;
+
   std::ifstream in_map_(map_file_.c_str(), std::ifstream::in);
 
   string line;
@@ -72,7 +76,7 @@ int main() {
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &cmd_vel, &max_s, &curr_time]
+               &map_waypoints_dx,&map_waypoints_dy, &ref_vel, &cmd_vel, &max_s, &curr_time, &our_veh]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -255,6 +259,114 @@ int main() {
 					}
 					#endif
 					/////////////////END STEP 0 ////////////////////////////////////
+
+					////////////// START STEP 1 ////////////////////////////////////
+					/*
+					Step 1: Figure out time offset(to predict other car positions) based on prev path size
+										time_offset = prev_path_size * T_STEP
+									Initialize our car using end point of prev path converted from (x, y) to (s, d)
+									Initialize other cars using sensor fusion data and generate predicitons of positions, starting at time_offset
+					*/
+
+					int prev_size = previous_path_x.size();
+
+					double time_offset = prev_size * T_STEP;
+
+					// Initialization of our car
+
+					double our_veh_x, our_veh_y, our_veh_angle;
+					double our_veh_s, our_veh_s_dot, our_veh_s_ddot;
+					double our_veh_d, our_veh_d_dot, our_veh_d_ddot;
+
+					// use default values if not enough previous path points
+					if (prev_size < 4) {
+						our_veh_x = car_x;
+						our_veh_y = car_y;
+						our_veh_angle = deg2rad(car_yaw);
+						our_veh_s = car_s;
+						our_veh_d = car_d;
+						our_veh_s_dot = car_speed;
+						our_veh_d_dot = 0;
+						our_veh_s_ddot = 0;
+						our_veh_d_ddot = 0;
+					}
+					else {
+
+						double  our_veh_x_prev, our_veh_y_prev, our_veh_vel_x, our_veh_vel_y, 
+							our_veh_x_prev2, our_veh_y_prev2, our_veh_vel_x_prev, our_veh_vel_y_prev, 
+							our_veh_acc_x, our_veh_acc_y;
+
+						// Current vehicle position - last point of previous path
+						our_veh_x = previous_path_x[prev_size - 1];
+						our_veh_y = previous_path_y[prev_size - 1];
+
+						// Previous vehicle position
+						our_veh_x_prev = previous_path_x[prev_size - 2];
+						our_veh_y_prev = previous_path_y[prev_size - 2];
+
+						// Calculate s and d
+						our_veh_angle = atan2(our_veh_y - our_veh_y_prev, our_veh_x - our_veh_x_prev);
+						vector<double> sd_pos = getFrenet(our_veh_x, our_veh_y, our_veh_angle, smooth_map_waypoints_x, smooth_map_waypoints_y, smooth_map_waypoints_s);
+						our_veh_s = sd_pos[0];
+						our_veh_d = sd_pos[1];
+
+						// Determine dx, dy vector from smooth waypoints
+						// Since smooth waypoints are close enough together, dx, dy can be reused for previous two points 
+						// to calculate velocity and acceleration
+						int next_wp_index = NextWaypoint(our_veh_x, our_veh_y, our_veh_angle, smooth_map_waypoints_x, smooth_map_waypoints_y);
+						double dx = smooth_map_waypoints_dx[next_wp_index - 1];
+						double dy = smooth_map_waypoints_dy[next_wp_index - 1];
+
+						// sx,sy is perpendicular to dx,dy
+						double sx = -dy;
+						double sy = dx;
+
+						our_veh_vel_x = (our_veh_x - our_veh_x_prev) / T_STEP;
+						our_veh_vel_y = (our_veh_y - our_veh_y_prev) / T_STEP;
+
+						// Calculate s_dot & d_dot
+						// Project V (vx,vy) velocity vector onto S (sx,sy) and D (dx,dy) vectors
+						// Use dot products of V with S and V with D
+						our_veh_s_dot = our_veh_vel_x * sx + our_veh_vel_y * sy;
+						our_veh_d_dot = our_veh_vel_x * dx + our_veh_vel_y * dy;
+
+						// calculate s_doubledot, d_doubledot from xy acceleration
+						our_veh_x_prev2 = previous_path_x[prev_size - 3];
+						our_veh_y_prev2 = previous_path_y[prev_size - 3];
+						our_veh_vel_x_prev = (our_veh_x_prev - our_veh_x_prev2) / T_STEP;
+						our_veh_vel_y_prev = (our_veh_y_prev - our_veh_y_prev2) / T_STEP;
+						our_veh_acc_x = (our_veh_vel_x - our_veh_vel_x_prev) / T_STEP;
+						our_veh_acc_y = (our_veh_vel_y - our_veh_vel_y_prev) / T_STEP;
+						our_veh_s_ddot = our_veh_acc_x * sx + our_veh_acc_y * sy;
+						our_veh_d_ddot = our_veh_acc_x * dx + our_veh_acc_y * dy;
+
+					}
+
+					our_veh.s = our_veh_s;
+					our_veh.s_dot = our_veh_s_dot;
+					our_veh.s_doubledot = our_veh_s_ddot;
+					our_veh.d = our_veh_d;
+					our_veh.d_dot = our_veh_d_dot;
+					our_veh.d_doubledot = our_veh_d_ddot;
+
+					// Initialization and prediction of other cars
+					vector<Vehicle> other_veh;
+
+					for (int i = 0; i < sensor_fusion.size(); ++i) {
+						double other_veh_s = sensor_fusion[i][5];
+						double vx = sensor_fusion[i][3];
+						double vy = sensor_fusion[i][4];
+						double other_veh_s_dot = sqrt(vx * vx + vy * vy);
+						double other_veh_s_doubledot = 0;
+						double other_veh_d = sensor_fusion[i][6];
+						double other_veh_d_dot = 0;
+						double other_veh_d_doubledot = 0;
+						
+						other_veh.push_back(Vehicle(other_veh_s, other_veh_s_dot, other_veh_s_doubledot, other_veh_d, other_veh_d_dot, other_veh_d_doubledot));
+						other_veh[i].generate_predictions(time_offset);
+					}
+					////////////// END STEP 1   ////////////////////////////////////
+					
 					// car's lane
 					int car_lane = 1;
 
@@ -287,7 +399,6 @@ int main() {
 					double ref_y = car_y;
 					double ref_yaw = deg2rad(car_yaw);
 
-					int prev_size = previous_path_x.size();
 					vector<double> next_x_vals;
 					vector<double> next_y_vals;
 					vector<double> rough_x_vals;
@@ -300,7 +411,14 @@ int main() {
 					bool too_close = false;
 
 					if (closest_ahead_dist[car_lane] < slowdown_dist) {
-						ref_vel = closest_ahead_speed[car_lane];
+						if (closest_ahead_dist[car_lane] < brake_dist) {
+							ref_vel = std::max(closest_ahead_speed[car_lane] - 5.0, 0.0);
+						}
+						else {
+							ref_vel = closest_ahead_speed[car_lane];
+						}
+						
+
 						too_close = true;
 					}
 
@@ -409,10 +527,18 @@ int main() {
 					}
 
 					// Pick 3 points away from the car to give coordinates for the spline
-					vector<double> start_xy = getXY(fmod(car_s + 30, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> mid_xy		= getXY(fmod(car_s + 60, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> final_xy = getXY(fmod(car_s + 90, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					vector<double> start_xy_new = getXY(fmod(car_s + 30, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					vector<double> mid_xy_new		= getXY(fmod(car_s + 60, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
+					vector<double> final_xy_new = getXY(fmod(car_s + 90, max_s), (2.0 + 4.0 * target_lane), smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
 					
+					vector<double> start_xy = getXY(fmod(car_s + 30, max_s), (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> mid_xy = getXY(fmod(car_s + 60, max_s), (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+					vector<double> final_xy = getXY(fmod(car_s + 90, max_s), (2.0 + 4.0 * target_lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+					start_xy = start_xy_new;
+					mid_xy = mid_xy_new;
+					final_xy = final_xy_new;
+
 					rough_x_vals.push_back(start_xy[0]);
 					rough_x_vals.push_back(mid_xy[0]);
 					rough_x_vals.push_back(final_xy[0]);
