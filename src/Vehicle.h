@@ -22,6 +22,7 @@ public:
 	unsigned int lane;
 	string state;
 	vector<string> available_states;
+	vector<double> target_s, target_d;
 	vector<double> s_traj_coeffs, d_traj_coeffs;
 
 	// State predictions for other vehicles
@@ -38,6 +39,8 @@ public:
 	void upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ahead_dist)[3], double (&car_behind_dist)[3]);
 	void upd_lane(double d_curr);
 	void upd_available_states(vector<Vehicle> &other_vehicles);
+	void gen_targets();
+	void perturb_target(double mu_s, double mu_d, double sig_s, double sig_d);
 	void generate_predictions(double time_offset);
 };
 

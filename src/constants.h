@@ -32,9 +32,10 @@ const double MAX_JERK = 10;  // m / s / s / s
 const double MAX_ACCEL = 10; // m / s / s
 
 // Randomized target generation
-const double SIGMA_S = 10; // m
-const double SIGMA_D = 1; // m
-const unsigned int RND_TGT_COUNT = 10; 
+const double SIGMA_S = 5; // m
+const double SIGMA_D = 0.5; // m
+const double SIGMA_D_KL = 0.01; //m
+const unsigned int RND_TGT_COUNT = 20; 
 
 // Path Time
 const double PATH_TIME = 1; // sec

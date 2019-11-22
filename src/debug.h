@@ -5,6 +5,7 @@
 //#define DEBUG_WAYPOINTS
 #define DEBUG_CARPRED
 //#define DEBUG_NEXTPATH
+#define DEBUG_TARGETS
 
 #endif
 

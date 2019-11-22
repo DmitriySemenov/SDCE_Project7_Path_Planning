@@ -168,7 +168,9 @@ int main() {
 					// Create data logging file for debug:
 					// Append to existing file
 					std::ofstream debug_log ("debug_log.csv", std::ofstream::app);
-					
+					debug_log << "########, ########, ########, ########, ########, ########, ########, ########, ########, ########, ########, ########, ########, ########, ########";
+					debug_log << std::endl;
+
 					if (previous_path_x.size() > 0)
 						curr_time += (PATH_SIZE - previous_path_x.size())* T_STEP;
 
@@ -376,10 +378,11 @@ int main() {
 					*/
 
 					our_veh.upd_available_states(other_veh);
+
 					#ifdef DEBUG_CARPRED
 					debug_log << "Predict Time: " << (curr_time + time_offset) << std::endl;
 
-					debug_log << "Our Pred S, Our Pred D, Our Pred S_D, Our Pred S_DD, Our Pred D_D, Our Pred D_DD" << std::endl;
+					debug_log << "S, D, S_DOT, S_DBL_DOT, D_D, D_DBL_DOT" << std::endl;
 					debug_log << our_veh.s << ", " << our_veh.d << ", " << our_veh.s_dot << ", " << our_veh.s_doubledot << ", " << our_veh.d_dot << ", " << our_veh.d_doubledot << std::endl;
 
 					debug_log << "Other Cars (S & Lane):" << std::endl;
@@ -395,6 +398,45 @@ int main() {
 					debug_log << std::endl;
 					#endif
 					////////////// END STEP 2   ////////////////////////////////////
+					////////////// START STEP 3   //////////////////////////////////
+					/*
+					Step 3: For each available operating_state generate target positions in (s, d) projected into the future with T = TRAJ_TIME sec.
+									For KL : d = middle of car_lane,
+									LCL : d = middle of the lane to the left of car_lane
+									LCR : d = middle of the lane to the right of car_lane
+									For all states : s = project s 1 second ahead using current speed and accel, but considering max speed limit.
+									
+									Using these KL, LCL, LCR targets (s_tgt,d_tgt), for each available state
+									generate RND_TGT_COUNT(10) targets using gaussian distribution and sigma defined in costants.h
+					*/
+
+					our_veh.gen_targets();
+
+					#ifdef DEBUG_TARGETS
+					debug_log << "Target Positions At Time: " << (curr_time + time_offset + TRAJ_TIME) << std::endl;
+
+					debug_log << "TGT S1";
+					for (unsigned int i = 1; i < our_veh.target_s.size(); ++i)
+						debug_log << ", TGT S" << i+1;
+					debug_log << std::endl;
+					
+					debug_log << our_veh.target_s[0];
+					for (unsigned int i = 1; i < our_veh.target_s.size(); ++i)
+						debug_log << ", " << our_veh.target_s[i];
+					debug_log << std::endl;
+					
+
+					debug_log << "TGT D1";
+					for (unsigned int i = 1; i < our_veh.target_d.size(); ++i)
+						debug_log << ", TGT D" << i+1;
+					debug_log << std::endl;
+
+					debug_log << our_veh.target_d[0];
+					for (unsigned int i = 1; i < our_veh.target_d.size(); ++i)
+						debug_log << ", " << our_veh.target_d[i];
+					debug_log << std::endl;
+					#endif
+					////////////// END STEP 3   ////////////////////////////////////
 
 					// car's lane
 					int car_lane = 1;
