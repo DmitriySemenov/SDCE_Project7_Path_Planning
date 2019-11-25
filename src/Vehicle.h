@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "Eigen-3.3/Eigen/Dense"
 
 using std::map;
 using std::string;
@@ -23,7 +24,7 @@ public:
 	string state;
 	vector<string> available_states;
 	vector<double> target_s, target_d;
-	vector<double> s_traj_coeffs, d_traj_coeffs;
+	vector<vector<double>> s_traj_coeffs, d_traj_coeffs;
 
 	// State predictions for other vehicles
 	vector<Vehicle> predictions;
@@ -42,6 +43,9 @@ public:
 	void gen_targets();
 	void perturb_target(double mu_s, double mu_d, double sig_s, double sig_d);
 	void generate_predictions(double time_offset);
+	void generate_coeffs_for_targets();
+	vector<vector<double>> generate_traj_for_target(int target_index);
+	vector<double> JMT(vector<double>& start, vector<double>& end, double T);
 };
 
 #endif  // VEHICLE_H

@@ -159,6 +159,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\constants.h" />
+    <ClInclude Include="..\..\src\cost.h" />
     <ClInclude Include="..\..\src\debug.h" />
     <ClInclude Include="..\..\src\helpers.h" />
     <ClInclude Include="..\..\src\json.hpp" />

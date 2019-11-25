@@ -142,12 +142,12 @@ int main() {
 									For all states: s = project s 1 second ahead using current speed.
 																	Where current speed can be calculated using last 2 path points in (s,d), if prev_path_size > 1.
 																	If prev_path_size <= 1, use our_car_speed
-					Step 4: For each state target s and d (s_t, d_t), generate (RND_TGT_COUNT) number of randomized target states (s_r, d_r) using gaussian distribution.
+									For each state target s and d (s_t, d_t), generate (RND_TGT_COUNT) number of randomized target states (s_r, d_r) using gaussian distribution.
 									Mu = s_t or d_t; Sigma = Use constants from constants file.
 
-					Step 5: For each (s_r, d_r) generate JMT coefficients for car_s -> s_r and car_d -> d_r, assuming TRAJ_TIME second(s) time for reaching target.
+					Step 4: For each (s_r, d_r) generate JMT coefficients for car_s -> s_r and car_d -> d_r, assuming TRAJ_TIME second(s) time for reaching target.
 
-					Step 6: Calculate total cost for each set of JMT coeff. Use original (s_t, d_t) for each state.
+					Step 5: Calculate total cost for each set of JMT coeff. Use original (s_t, d_t) for each state.
 								cost function:			weight:
 								s_diff_cost					++
 								d_diff_cost					++++
@@ -158,9 +158,9 @@ int main() {
 								buffer_cost					++
 								max_accel_cost			+++++
 
-					Step 7: Find minimum cost trajectory coefficients
-					Step 8: Using minimum cost coefficiencts, generate s and d targets for the next TRAJ_TIME second(s) using T_STEP time step.
-					Step 9: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
+					Step 6: Find minimum cost trajectory coefficients
+					Step 7: Using minimum cost coefficiencts, generate s and d targets for the next TRAJ_TIME second(s) using T_STEP time step.
+					Step 8: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
 									Use conversion function to convert from (s,d) to (x,y) and smoothed our waypoints.
 
 					*/
@@ -438,6 +438,56 @@ int main() {
 					#endif
 					////////////// END STEP 3   ////////////////////////////////////
 
+					////////////// START STEP 4   //////////////////////////////////
+					/* Step 4: For each(s_t, d_t) generate JMT coefficients for each car_s->s_t car_d->d_t,
+					assuming TRAJ_TIME second(s) time for reaching target. */
+					our_veh.generate_coeffs_for_targets();
+
+					#ifdef DEBUG_TRAJ
+					int debug_idx = 10;
+					vector<vector<double>> debug_traj_sd = our_veh.generate_traj_for_target(debug_idx);
+					double debug_target_s = our_veh.target_s[debug_idx];
+					double debug_target_d = our_veh.target_d[debug_idx];
+					debug_log << "TRAJECTORY FOR: " << std::endl;
+					debug_log << "TGT S, TGT D";
+					debug_log << std::endl;
+					debug_log << debug_target_s << ", " << debug_target_d << std::endl;
+
+					debug_log << "TRAJ S1";
+					for (unsigned int i = 1; i < debug_traj_sd.size(); ++i)
+						debug_log << ", TRAJ S" << i + 1;
+					debug_log << std::endl;
+
+					debug_log << debug_traj_sd[0][0];
+					for (unsigned int i = 1; i < debug_traj_sd.size(); ++i)
+						debug_log << ", " << debug_traj_sd[i][0];
+					debug_log << std::endl;
+
+					debug_log << "TRAJ D1";
+					for (unsigned int i = 1; i < debug_traj_sd.size(); ++i)
+						debug_log << ", TRAJ D" << i + 1;
+					debug_log << std::endl;
+
+					debug_log << debug_traj_sd[0][1];
+					for (unsigned int i = 1; i < debug_traj_sd.size(); ++i)
+						debug_log << ", " << debug_traj_sd[i][1];
+					debug_log << std::endl;
+					#endif		
+					////////////// END STEP 4   ////////////////////////////////////
+
+					////////////// START STEP 5   //////////////////////////////////
+					/* Step 5: For each target, generate trajectory and calculate total cost using multiple cost functions.
+								cost function:						weight:
+								collision_cost						+++++
+								buffer_cost								++
+								exceeds_speed_limit_cost	+++++
+								high_spd_cost							+++
+								max_jerk_cost							+++++
+								max_accel_cost						+++++
+					*/
+
+
+					////////////// END STEP 5   ////////////////////////////////////
 					// car's lane
 					int car_lane = 1;
 

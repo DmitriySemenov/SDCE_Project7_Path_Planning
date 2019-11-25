@@ -46,5 +46,8 @@
     <ClInclude Include="..\..\src\Vehicle.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\cost.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

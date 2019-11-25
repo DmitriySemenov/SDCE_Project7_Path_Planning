@@ -6,15 +6,12 @@
 #include <math.h>
 #include <string>
 #include <vector>
-#include "Eigen-3.3/Eigen/Dense"
 #include "spline.h"
 #include "constants.h"
 
 // for convenience
 using std::string;
 using std::vector;
-using Eigen::MatrixXd;
-using Eigen::VectorXd;
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -194,6 +191,25 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   return {x,y};
 }
 
+vector<double> smooth_waypoints(vector<double> frenet_point_s, vector<double> cart_point, double distance, int output_size) 
+{
+	// use the spline library to generate smooth waypoints
+	tk::spline s;
+	s.set_points(frenet_point_s, cart_point); 
+	vector<double> smooth_points;
+	double start_s = frenet_point_s[0];
+
+	if (frenet_point_s.size() != cart_point.size()) {
+		std::cout << "ERROR DURING SMOOTHING. SIZE MISMATCH" << std::endl;
+		return { 0 };
+	}
+
+	// Start at the first s-point and increment by distance amount of meters to get the next interpolated point
+	for (int i = 0; i < output_size; ++i) {
+		smooth_points.push_back(s(start_s + i * distance));
+	}
+	return smooth_points;
+}
 
 /////////////REMOVE THIS LATER/////////////////////////
 void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, double main_car_s, double max_s,
@@ -212,11 +228,11 @@ void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, 
 		double check_car_dist = max_s;
 
 		// !!!!!!!!! PROTECT FOR MAX_S !!!!!!!!!!!!!!!!!!
-		
+
 		for (int lane = 0; lane < 3; ++lane) {
 			// for every lane, find the car closest ahead and behind of us
 			if (d < (2.0 + 4.0 * lane + 2.0) && d >(2.0 + 4.0 * lane - 2.0)) {
-				
+
 				// car ahead
 				if (check_car_s >= main_car_s) {
 					check_car_dist = check_car_s - main_car_s;
@@ -239,67 +255,5 @@ void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, 
 
 	}
 
-}
-
-vector<double> JMT(vector<double>& start, vector<double>& end, double T) {
-	/**
-	 * Calculate the Jerk Minimizing Trajectory that connects the initial state
-	 * to the final state in time T.
-	 *
-	 * @param start - the vehicles start location given as a length three array
-	 *   corresponding to initial values of [s, s_dot, s_double_dot] or [d, d_dot, d_double_dot]
-	 * @param end - the desired end state for vehicle. Like "start" this is a
-	 *   length three array.
-	 * @param T - The duration, in seconds, over which this maneuver should occur.
-	 *
-	 * @output an array of length 6, each value corresponding to a coefficent in
-	 *   the polynomial:
-	 *   s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
-	 *
-	 * EXAMPLE
-	 *   > JMT([0, 10, 0], [10, 10, 0], 1)
-	 *     [0.0, 10.0, 0.0, 0.0, 0.0, 0.0]
-	 */
-	MatrixXd A = MatrixXd(3, 3);
-	A << T * T * T, T* T* T* T,		T* T* T* T* T,
-			 3 * T* T,	4 * T* T* T,	5 * T* T* T* T,
-			 6 * T,			12 * T* T,		20 * T* T* T;
-
-	MatrixXd B = MatrixXd(3, 1);
-	B <<	end[0] - (start[0] + start[1] * T + .5 * start[2] * T * T),
-				end[1] - (start[1] + start[2] * T),
-				end[2] - start[2];
-
-	MatrixXd Ai = A.inverse();
-
-	MatrixXd C = Ai * B;
-
-	vector <double> result = { start[0], start[1], .5 * start[2] };
-
-	for (int i = 0; i < C.size(); ++i) {
-		result.push_back(C.data()[i]);
-	}
-
-	return result;
-}
-
-vector<double> smooth_waypoints(vector<double> frenet_point_s, vector<double> cart_point, double distance, int output_size) 
-{
-	// use the spline library to generate smooth waypoints
-	tk::spline s;
-	s.set_points(frenet_point_s, cart_point); 
-	vector<double> smooth_points;
-	double start_s = frenet_point_s[0];
-
-	if (frenet_point_s.size() != cart_point.size()) {
-		std::cout << "ERROR DURING SMOOTHING. SIZE MISMATCH" << std::endl;
-		return { 0 };
-	}
-
-	// Start at the first s-point and increment by distance amount of meters to get the next interpolated point
-	for (int i = 0; i < output_size; ++i) {
-		smooth_points.push_back(s(start_s + i * distance));
-	}
-	return smooth_points;
 }
 #endif  // HELPERS_H

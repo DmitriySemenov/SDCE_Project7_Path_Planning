@@ -8,6 +8,8 @@
 
 using std::string;
 using std::vector;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 // Initializes Vehicle
 Vehicle::Vehicle() {
@@ -67,9 +69,7 @@ void Vehicle::upd_available_states(vector<Vehicle> &other_vehicles) {
 	double car_ahead_dist[3] = { MAXIMUM_S, MAXIMUM_S, MAXIMUM_S };
 	double car_behind_dist[3] = { MAXIMUM_S, MAXIMUM_S, MAXIMUM_S };
 
-	for (unsigned int i = 0; i < other_vehicles.size(); ++i) {
-		upd_closest_veh(other_vehicles, car_ahead_dist, car_behind_dist);
-	}
+	upd_closest_veh(other_vehicles, car_ahead_dist, car_behind_dist);
 
 	// Check if the vehicles in adjacent lanes are far enough to allow lane change
 	// Vehicle is in the middle lane
@@ -231,11 +231,17 @@ void Vehicle::perturb_target(double mu_s, double mu_d, double sig_s, double sig_
 	std::normal_distribution<double> d_dist(mu_d, sig_d);
 
 	for (int i = 0; i < RND_TGT_COUNT; ++i) {
-		double s = s_dist(generator);
-		double d = d_dist(generator);
+		double s_tgt = s_dist(generator);
+		double d_tgt = d_dist(generator);
 
-		target_s.push_back(s);
-		target_d.push_back(d);
+		// Account for over/underflow
+		if (s_tgt > MAXIMUM_S)
+			s_tgt -= MAXIMUM_S;
+		if (s_tgt < 0)
+			s_tgt += MAXIMUM_S;
+
+		target_s.push_back(s_tgt);
+		target_d.push_back(d_tgt);
 	}
 	
 }
@@ -259,4 +265,96 @@ void Vehicle::generate_predictions(double time_offset) {
 		predictions.push_back(Vehicle(new_s,s_dot,0,d,0,0));
 	}
 
+}
+
+void Vehicle::generate_coeffs_for_targets() {
+	/* For each pair of s and d targets, generate JMT coefficients*/
+	s_traj_coeffs.clear();
+	d_traj_coeffs.clear();
+
+	for (int i = 0; i < target_s.size(); ++i) {
+		
+		double tgt_s = target_s[i];
+		double tgt_d = target_d[i];
+		//If target wraps around max, use target+MAX for coefficient generation
+		if (tgt_s < s)
+			tgt_s += MAXIMUM_S;
+
+		double tgt_s_dot = (target_s[i] - s) / TRAJ_TIME;
+
+		vector<double> start_s = { s, s_dot, s_doubledot };
+		vector<double> end_s = { tgt_s, tgt_s_dot, 0 };
+		vector<double> start_d = { d, d_dot, d_doubledot };
+		vector<double> end_d = { tgt_d, 0, 0 };
+
+		s_traj_coeffs.push_back(JMT(start_s, end_s, TRAJ_TIME));
+		d_traj_coeffs.push_back(JMT(start_d, end_d, TRAJ_TIME));
+	}
+}
+
+vector<vector<double>> Vehicle::generate_traj_for_target(int target_index) {
+	/* Generates vector of trajectory coordinate pairs (s,d) for a given trajectory coefficients*/
+	vector<double> s_coeff = s_traj_coeffs[target_index];
+	vector<double> d_coeff = d_traj_coeffs[target_index];
+	vector<vector<double>> trajectory;
+
+	for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
+		vector<double> s_d_curr;
+		double t = i * T_STEP;
+		double s_curr, d_curr;
+		// generate s and d using polynomial coefficients
+		// s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
+		s_curr = s_coeff[0] + s_coeff[1] * t + s_coeff[2] * pow(t, 2) + s_coeff[3] * pow(t, 3) + s_coeff[4] * pow(t, 4) + s_coeff[5] * pow(t, 5);
+		d_curr = d_coeff[0] + d_coeff[1] * t + d_coeff[2] * pow(t, 2) + d_coeff[3] * pow(t, 3) + d_coeff[4] * pow(t, 4) + d_coeff[5] * pow(t, 5);
+		
+		// Limits check
+		if (s_curr > MAXIMUM_S)
+			s_curr -= MAXIMUM_S;
+
+		s_d_curr.push_back(s_curr);
+		s_d_curr.push_back(d_curr);
+		trajectory.push_back(s_d_curr);
+	}
+	return trajectory;
+}
+vector<double> Vehicle::JMT(vector<double>& start, vector<double>& end, double T) {
+	/**
+	 * Calculate the Jerk Minimizing Trajectory that connects the initial state
+	 * to the final state in time T.
+	 *
+	 * @param start - the vehicles start location given as a length three array
+	 *   corresponding to initial values of [s, s_dot, s_double_dot] or [d, d_dot, d_double_dot]
+	 * @param end - the desired end state for vehicle. Like "start" this is a
+	 *   length three array.
+	 * @param T - The duration, in seconds, over which this maneuver should occur.
+	 *
+	 * @output an array of length 6, each value corresponding to a coefficent in
+	 *   the polynomial:
+	 *   s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
+	 *
+	 * EXAMPLE
+	 *   > JMT([0, 10, 0], [10, 10, 0], 1)
+	 *     [0.0, 10.0, 0.0, 0.0, 0.0, 0.0]
+	 */
+	MatrixXd A = MatrixXd(3, 3);
+	A << T * T * T, T* T* T* T, T* T* T* T* T,
+		3 * T* T, 4 * T* T* T, 5 * T* T* T* T,
+		6 * T, 12 * T* T, 20 * T* T* T;
+
+	MatrixXd B = MatrixXd(3, 1);
+	B << end[0] - (start[0] + start[1] * T + .5 * start[2] * T * T),
+		end[1] - (start[1] + start[2] * T),
+		end[2] - start[2];
+
+	MatrixXd Ai = A.inverse();
+
+	MatrixXd C = Ai * B;
+
+	vector <double> result = { start[0], start[1], .5 * start[2] };
+
+	for (int i = 0; i < C.size(); ++i) {
+		result.push_back(C.data()[i]);
+	}
+
+	return result;
 }
