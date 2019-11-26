@@ -17,7 +17,7 @@ double logistic(double x) {
 	return 2.0 / (1 + exp(-x)) - 1.0;
 }
 
-double nearest_approach(vector<vector<double>> traj, vector<Vehicle> prediction) {
+double nearest_approach(vector<vector<double>> &traj, vector<Vehicle> &prediction) {
 	// Calculates the closest distance to a vehicle during a trajectory.
 	double closest = 999999;
 	for (int i = 0; i < TRAJ_SIZE; i++) {
@@ -31,7 +31,7 @@ double nearest_approach(vector<vector<double>> traj, vector<Vehicle> prediction)
 	return closest;
 }
 
-double nearest_approach_to_any_vehicle(vector<vector<double>> traj, vector<Vehicle> vehicles) {
+double nearest_approach_to_any_vehicle(vector<vector<double>> &traj, vector<Vehicle> &vehicles) {
 	// Calculates the closest distance to any vehicle during a trajectory.
 	double closest = 999999;
 	for (int i = 0; i < vehicles.size(); i++) {
@@ -43,7 +43,7 @@ double nearest_approach_to_any_vehicle(vector<vector<double>> traj, vector<Vehic
 	return closest;
 }
 
-vector<double> s_velocities_for_trajectory(vector<vector<double>> traj) {
+vector<double> s_velocities_for_trajectory(vector<vector<double>> &traj) {
 	// Calculates s velocities for trajectory
 	vector<double> s_velocities;
 	for (int i = 1; i < traj.size(); i++) {
@@ -52,7 +52,7 @@ vector<double> s_velocities_for_trajectory(vector<vector<double>> traj) {
 	return s_velocities;
 }
 
-vector<double> d_velocities_for_trajectory(vector<vector<double>> traj) {
+vector<double> d_velocities_for_trajectory(vector<vector<double>> &traj) {
 	// Calculates d velocities for trajectory
 	vector<double> d_velocities;
 	for (int i = 1; i < traj.size(); i++) {
@@ -63,7 +63,7 @@ vector<double> d_velocities_for_trajectory(vector<vector<double>> traj) {
 
 
 ///////////////////// COST FUNCTIONS ////////////////
-double collision_cost(vector<vector<double>> traj, vector<Vehicle> vehicles) {
+double collision_cost(vector<vector<double>> &traj, vector<Vehicle> &vehicles) {
 	// Binary cost function which penalizes collisions.
 	double nearest = nearest_approach_to_any_vehicle(traj, vehicles);
 	if (nearest < 2 * VEH_RADIUS) {
@@ -74,13 +74,13 @@ double collision_cost(vector<vector<double>> traj, vector<Vehicle> vehicles) {
 	}
 }
 
-double buffer_cost(vector<vector<double>> traj, vector<Vehicle> vehicles) {
+double buffer_cost(vector<vector<double>> &traj, vector<Vehicle> &vehicles) {
 	// Penalizes getting close to other vehicles.
 	double nearest = nearest_approach_to_any_vehicle(traj, vehicles);
 	return logistic(2 * VEH_RADIUS / nearest);
 }
 
-double exceeds_speed_limit_cost(vector<vector<double>> traj) {
+double exceeds_speed_limit_cost(vector<vector<double>> &traj) {
 	// Penalizes vehicle speed in s greater than MAX_SPEED
 	vector<double> s_vel_traj = s_velocities_for_trajectory(traj);
 	for (double s_vel : s_vel_traj) {
@@ -91,7 +91,7 @@ double exceeds_speed_limit_cost(vector<vector<double>> traj) {
 	return 0;
 }
 
-double high_spd_cost(vector<vector<double>> traj) {
+double high_spd_cost(vector<vector<double>> &traj) {
 	// Rewards high final speed.
 	vector<double> s_vel_traj = s_velocities_for_trajectory(traj);
 	double final_s_vel;
@@ -100,4 +100,13 @@ double high_spd_cost(vector<vector<double>> traj) {
 	return logistic((MAX_SPEED - final_s_vel) / MAX_SPEED);
 }
 
+double total_traj_cost(vector<vector<double>> &curr_traj, vector<Vehicle> &other_veh) {
+	double sum_of_costs = 0;
+
+	sum_of_costs += collision_cost(curr_traj, other_veh) * COLLISION_W;
+	sum_of_costs += buffer_cost(curr_traj, other_veh) * BUFF_W;
+	sum_of_costs += exceeds_speed_limit_cost(curr_traj) * SPEEDLIM_W;
+	sum_of_costs += high_spd_cost(curr_traj) * HIGHSPD_W;
+	return sum_of_costs;
+}
 #endif

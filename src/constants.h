@@ -32,7 +32,7 @@ const double MAX_JERK = 10;  // m / s / s / s
 const double MAX_ACCEL = 10; // m / s / s
 
 // Randomized target generation
-const double SIGMA_S = 5; // m
+const double SIGMA_S = 5.0; // m
 const double SIGMA_D = 0.5; // m
 const double SIGMA_D_KL = 0.01; //m
 const unsigned int RND_TGT_COUNT = 20; 
@@ -48,5 +48,12 @@ const double TRAJ_TIME = 1; // sec
 
 // How many points we want to have in the trajectory
 const unsigned int TRAJ_SIZE = TRAJ_TIME / T_STEP;
+
+const double COLLISION_W	= 50.0;
+const double BUFF_W				= 20.0;
+const double SPEEDLIM_W		= 50.0;
+const double HIGHSPD_W		= 30.0;
+const double MAXJERK_W		= 50.0;
+const double MAXACCEL_W		= 50.0;
 
 #endif
