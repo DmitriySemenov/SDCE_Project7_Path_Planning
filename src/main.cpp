@@ -485,6 +485,17 @@ int main() {
 					double debug_target_s = our_veh.target_s[best_traj_idx];
 					double debug_target_d = our_veh.target_d[best_traj_idx];
 
+					std::cout << "D_TGT: " << debug_target_d;
+					std::cout << " COLL: " << collision_cost(trajectory, other_veh)* COLLISION_W;
+					std::cout << " BUFF: " << buffer_cost(trajectory, other_veh)* BUFF_W;
+					std::cout << " SPDLIM: " << exceeds_speed_limit_cost(trajectory)* SPEEDLIM_W;
+					std::cout << " HS: " << high_spd_cost(trajectory)* HIGHSPD_W;
+					std::cout << " ACC: " << exceeds_accel_limit_cost(trajectory)* MAXACCEL_W;
+					std::cout << " TOT: " << best_traj_cost;
+					std::cout << " END. ";
+					std::cout << "\r";
+
+
 					debug_log << "BEST TRAJECTORY: " << std::endl;
 					debug_log << "TGT S, TGT D";
 					debug_log << std::endl;

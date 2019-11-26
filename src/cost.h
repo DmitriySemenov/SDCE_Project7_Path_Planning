@@ -61,6 +61,14 @@ vector<double> d_velocities_for_trajectory(vector<vector<double>> &traj) {
 	return d_velocities;
 }
 
+vector<double> accels_for_trajectory(vector<double>& traj_vel) {
+	vector<double> accels;
+
+	for (int i = 1; i < traj_vel.size(); i++) {
+		accels.push_back((traj_vel[i] - traj_vel[i - 1]) / T_STEP);
+	}
+	return accels;
+}
 
 ///////////////////// COST FUNCTIONS ////////////////
 double collision_cost(vector<vector<double>> &traj, vector<Vehicle> &vehicles) {
@@ -91,6 +99,28 @@ double exceeds_speed_limit_cost(vector<vector<double>> &traj) {
 	return 0;
 }
 
+double exceeds_accel_limit_cost(vector<vector<double>>& traj) {
+	// Penalizes vehicle speed in s greater than MAX_SPEED
+	vector<double> s_vel_traj = s_velocities_for_trajectory(traj);
+	vector<double> d_vel_traj = d_velocities_for_trajectory(traj);
+
+	vector<double> s_accels = accels_for_trajectory(s_vel_traj);
+	vector<double> d_accels = accels_for_trajectory(d_vel_traj);
+
+	for (double s_acc : s_accels) {
+		if (s_acc > MAX_ACCEL) {
+			return 1;
+		}
+	}
+
+	for (double d_acc : d_accels) {
+		if (d_acc > MAX_ACCEL) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 double high_spd_cost(vector<vector<double>> &traj) {
 	// Rewards high final speed.
 	vector<double> s_vel_traj = s_velocities_for_trajectory(traj);
@@ -107,6 +137,7 @@ double total_traj_cost(vector<vector<double>> &curr_traj, vector<Vehicle> &other
 	sum_of_costs += buffer_cost(curr_traj, other_veh) * BUFF_W;
 	sum_of_costs += exceeds_speed_limit_cost(curr_traj) * SPEEDLIM_W;
 	sum_of_costs += high_spd_cost(curr_traj) * HIGHSPD_W;
+	sum_of_costs += exceeds_accel_limit_cost(curr_traj) * MAXACCEL_W;
 	return sum_of_costs;
 }
 #endif

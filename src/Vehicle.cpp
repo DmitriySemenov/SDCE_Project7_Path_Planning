@@ -162,7 +162,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i+1) * T_STEP;
-				new_s_dot = std::min(s_dot + s_doubledot * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + MAX_ACCEL/4 * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -173,7 +173,7 @@ void Vehicle::gen_targets() {
 			}
 			s_t = new_s;
 
-			perturb_target(s_t, d_t, SIGMA_S, SIGMA_D_KL);
+			perturb_target(s_t, d_t);
 		}
 		else if (available_states[i] == "LCL") {
 			d_t = 2.0 + (lane - 1) * 4.0;
@@ -184,7 +184,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i + 1) * T_STEP;
-				new_s_dot = std::min(s_dot + s_doubledot * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + MAX_ACCEL / 4 * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -195,7 +195,7 @@ void Vehicle::gen_targets() {
 			}
 			s_t = new_s;
 
-			perturb_target(s_t, d_t, SIGMA_S, SIGMA_D);
+			perturb_target(s_t, d_t);
 		}
 		else {
 			d_t = 2.0 + (lane + 1) * 4.0;
@@ -206,7 +206,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i + 1) * T_STEP;
-				new_s_dot = std::min(s_dot + s_doubledot * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + MAX_ACCEL / 5 * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -217,22 +217,18 @@ void Vehicle::gen_targets() {
 			}
 			s_t = new_s;
 
-			perturb_target(s_t, d_t, SIGMA_S, SIGMA_D);
+			perturb_target(s_t, d_t);
 		}
 	}
 	
 }
 
-void Vehicle::perturb_target(double mu_s, double mu_d, double sig_s, double sig_d) {
-	// Generate RND_TGT_COUNT number of target s and d coordinates
-	std::default_random_engine generator;
-	generator.seed(std::chrono::system_clock::now().time_since_epoch().count());
-	std::normal_distribution<double> s_dist(mu_s, sig_s);
-	std::normal_distribution<double> d_dist(mu_d, sig_d);
+void Vehicle::perturb_target(double s_t, double d_t) {
+	// Generate a number of target s and d coordinates
 
-	for (int i = 0; i < RND_TGT_COUNT; ++i) {
-		double s_tgt = s_dist(generator);
-		double d_tgt = d_dist(generator);
+	for (int i = S_NEG_OFF; i < S_POS_OFF; ++i) {
+		double s_tgt = s_t + i;
+		double d_tgt = d_t;
 
 		// Account for over/underflow
 		if (s_tgt > MAXIMUM_S)

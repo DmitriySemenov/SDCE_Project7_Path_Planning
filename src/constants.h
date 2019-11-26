@@ -19,23 +19,21 @@ const int ORIG_WP_AHEAD = 5;
 const double SMOOTH_WP_DIST = 1; // m
 
 // Max vehicle speed
-const double MAX_SPEED = 49.5 / 2.237;
+const double MAX_SPEED = 48 / 2.237;
 
 // Vehicle radius
-const double VEH_RADIUS = 1.25; // m
+const double VEH_RADIUS = 2.5; // m
 
 // Time Step
 const double T_STEP = 0.02;
 
 // Jerk and acceleration limits
-const double MAX_JERK = 10;  // m / s / s / s
-const double MAX_ACCEL = 10; // m / s / s
+const double MAX_JERK = 9;  // m / s / s / s
+const double MAX_ACCEL = 9; // m / s / s
 
 // Randomized target generation
-const double SIGMA_S = 5.0; // m
-const double SIGMA_D = 0.5; // m
-const double SIGMA_D_KL = 0.01; //m
-const unsigned int RND_TGT_COUNT = 20; 
+const int S_NEG_OFF = -5;
+const int S_POS_OFF = 5; 
 
 // Path Time
 const double PATH_TIME = 1; // sec
@@ -49,11 +47,11 @@ const double TRAJ_TIME = 1; // sec
 // How many points we want to have in the trajectory
 const unsigned int TRAJ_SIZE = TRAJ_TIME / T_STEP;
 
-const double COLLISION_W	= 50.0;
-const double BUFF_W				= 20.0;
-const double SPEEDLIM_W		= 50.0;
-const double HIGHSPD_W		= 30.0;
+const double COLLISION_W	= 5000.0;
+const double BUFF_W				= 0.0;
+const double SPEEDLIM_W		= 5000.0;
+const double HIGHSPD_W		= 100.0;
 const double MAXJERK_W		= 50.0;
-const double MAXACCEL_W		= 50.0;
+const double MAXACCEL_W		= 3000.0;
 
 #endif

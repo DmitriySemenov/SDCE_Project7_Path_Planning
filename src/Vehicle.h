@@ -41,7 +41,7 @@ public:
 	void upd_lane(double d_curr);
 	void upd_available_states(vector<Vehicle> &other_vehicles);
 	void gen_targets();
-	void perturb_target(double mu_s, double mu_d, double sig_s, double sig_d);
+	void perturb_target(double s_t, double d_t);
 	void generate_predictions(double time_offset);
 	void generate_coeffs_for_targets();
 	vector<vector<double>> generate_traj_for_target(int target_index);
