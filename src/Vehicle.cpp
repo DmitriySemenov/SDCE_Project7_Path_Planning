@@ -164,10 +164,10 @@ void Vehicle::gen_targets() {
 		For KL : d = middle of car_lane,
 		LCL : d = middle of the lane to the left of car_lane
 		LCR : d = middle of the lane to the right of car_lane
-		For all states : s = project position TRAJ_TIME sec. ahead using current speed and accel, but considering max speed limit.
-
+		For all states : s = project s 1 second ahead using current speed and accel, but considering max speed limit.
+									
 		Using these KL, LCL, LCR targets (s_tgt,d_tgt), for each available state
-		generate RND_TGT_COUNT(10) targets using gaussian distribution and sigma defined in costants.h */
+		generate a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead, with a S_INCR meters increment step */
 
 	// Reset targets
 	target_s.clear();

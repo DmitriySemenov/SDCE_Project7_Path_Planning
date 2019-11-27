@@ -140,32 +140,6 @@ double nearest_s_dist_to_vehicle_in_lane(vector<vector<double>>& traj, vector<Ve
 
 	return closest;
 }
-vector<double> s_velocities_for_trajectory(vector<vector<double>> &traj) {
-	// Calculates s velocities for trajectory
-	vector<double> s_velocities;
-	for (int i = 1; i < traj.size(); i++) {
-		s_velocities.push_back((traj[i][0] - traj[i - 1][0]) / T_STEP);
-	}
-	return s_velocities;
-}
-
-vector<double> d_velocities_for_trajectory(vector<vector<double>> &traj) {
-	// Calculates d velocities for trajectory
-	vector<double> d_velocities;
-	for (int i = 1; i < traj.size(); i++) {
-		d_velocities.push_back((traj[i][1] - traj[i - 1][1]) / T_STEP);
-	}
-	return d_velocities;
-}
-
-vector<double> accels_for_trajectory(vector<double>& traj_vel) {
-	vector<double> accels;
-
-	for (int i = 1; i < traj_vel.size(); i++) {
-		accels.push_back((traj_vel[i] - traj_vel[i - 1]) / T_STEP);
-	}
-	return accels;
-}
 
 ///////////////////// COST FUNCTIONS ////////////////
 double collision_cost(vector<vector<double>> &traj, vector<Vehicle> &vehicles) {

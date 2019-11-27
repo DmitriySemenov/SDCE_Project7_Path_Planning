@@ -375,7 +375,7 @@ int main() {
 									For all states : s = project s 1 second ahead using current speed and accel, but considering max speed limit.
 									
 									Using these KL, LCL, LCR targets (s_tgt,d_tgt), for each available state
-									generate RND_TGT_COUNT(10) targets using gaussian distribution and sigma defined in costants.h
+									generate a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead, with a S_INCR meters increment step
 					*/
 
 					our_veh.gen_targets();
@@ -408,7 +408,7 @@ int main() {
 
 					////////////// START STEP 4   //////////////////////////////////
 					/* 
-							Step 4: For each(s_t, d_t) generate JMT coefficients for each car_s->s_t car_d->d_t,
+							Step 4: For each (s_t, d_t) generate JMT coefficients for each car_s->s_t car_d->d_t,
 										assuming TRAJ_TIME second(s) time for reaching target. 
 					*/
 					our_veh.generate_coeffs_for_targets();		
@@ -416,7 +416,7 @@ int main() {
 
 					////////////// START STEP 5   //////////////////////////////////
 					/* 
-							Step 5: For each target, generate trajectory and calculate total cost using multiple cost functions.
+							Step 5: For each target, generate trajectory using JMT coefficients and calculate total cost using multiple cost functions.
 											Find the lowest cost trajectory and use it as target trajectory.
 					*/
 
@@ -470,134 +470,9 @@ int main() {
 					////////////// START STEP 6   //////////////////////////////////
 					/* 
 							Step 6: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
-											Use conversion function to convert from (s,d) to (x,y) and smoothed out waypoints.
+											Use conversion function to convert from (s,d) to (x,y) and smooth out waypoints.
 					*/
 
-					/*
-					// reference position
-					double ref_x = car_x;
-					double ref_y = car_y;
-					double ref_yaw = deg2rad(car_yaw);
-
-					vector<double> next_x_vals;
-					vector<double> next_y_vals;
-					vector<double> rough_x_vals;
-					vector<double> rough_y_vals;
-
-					// Create initial 2 rough start points using current car position or previous path last 2 points
-					if (prev_size < 2) {
-						double car_x_prev = car_x - cos(car_yaw);
-						double car_y_prev = car_y - sin(car_yaw);
-
-						rough_x_vals.push_back(car_x_prev);
-						rough_x_vals.push_back(car_x);
-						rough_y_vals.push_back(car_y_prev);
-						rough_y_vals.push_back(car_y);
-					}
-					else {
-						double ref_x_prev, ref_y_prev;
-
-						ref_x = previous_path_x[prev_size - 1];
-						ref_y = previous_path_y[prev_size - 1];
-						ref_x_prev = previous_path_x[prev_size - 2];
-						ref_y_prev = previous_path_y[prev_size - 2];
-						ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
-
-						rough_x_vals.push_back(ref_x_prev);
-						rough_x_vals.push_back(ref_x);
-						rough_y_vals.push_back(ref_y_prev);
-						rough_y_vals.push_back(ref_y);
-					}
-
-					// Pick 3 points away from the car to give coordinates for the spline
-					double half_d;
-					double quarter_d;
-					if (our_veh.d > target_d)
-						quarter_d = our_veh.d - (our_veh.d - target_d) / 4;
-					else
-						quarter_d = our_veh.d + (target_d - our_veh.d) / 4;
-
-					if (our_veh.d > target_d)
-						half_d = our_veh.d - (our_veh.d - target_d) / 2;
-					else
-						half_d = our_veh.d + (target_d - our_veh.d) / 2;
-
-					vector<double> quarter_xy = getXY((our_veh.s + (target_s - our_veh.s) / 3), quarter_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> half_xy = getXY((our_veh.s + (target_s - our_veh.s) / 1.5), half_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> target_xy = getXY(target_s, target_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> ahead_xy = getXY((target_s + 30.0), target_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-					vector<double> far_ahead_xy = getXY((target_s + 60.0), target_d, smooth_map_waypoints_s, smooth_map_waypoints_x, smooth_map_waypoints_y);
-
-					rough_x_vals.push_back(quarter_xy[0]);
-					rough_x_vals.push_back(half_xy[0]);
-					rough_x_vals.push_back(target_xy[0]);
-					rough_x_vals.push_back(ahead_xy[0]);
-					rough_x_vals.push_back(far_ahead_xy[0]);
-
-					rough_y_vals.push_back(quarter_xy[1]);
-					rough_y_vals.push_back(half_xy[1]);
-					rough_y_vals.push_back(target_xy[1]);
-					rough_y_vals.push_back(ahead_xy[1]);
-					rough_y_vals.push_back(far_ahead_xy[1]);
-
-					// Shift car's reference angle to 0 degrees
-					for (unsigned int i = 0; i < rough_x_vals.size(); ++i) {
-						double shift_x = rough_x_vals[i] - ref_x;
-						double shift_y = rough_y_vals[i] - ref_y;
-
-						rough_x_vals[i] = (shift_x * cos(0 - ref_yaw) - shift_y * sin(0 - ref_yaw));
-						rough_y_vals[i] = (shift_x * sin(0 - ref_yaw) + shift_y * cos(0 - ref_yaw));
-					}
-
-					tk::spline s;
-
-					// Create a spline using rough x-y coordinates
-					s.set_points(rough_x_vals, rough_y_vals);
-
-					// Add old path points to the new path first
-					for (int i = 0; i < prev_size; ++i) {
-						next_x_vals.push_back(previous_path_x[i]);
-						next_y_vals.push_back(previous_path_y[i]);
-					}
-
-					// Commanded velocity
-					cmd_vel = (target_s - our_veh.s) / TRAJ_TIME;
-
-					// How far away we want to generate the path for
-					double target_x = 30;
-					double target_y = s(target_x);
-					double target_dist = sqrt(target_x * target_x + target_y * target_y);
-					// Number of time-steps it takes to reach target distance with reference velocity
-					double N = (target_dist) / (T_STEP * cmd_vel);
-					// Step size in x-dimension per one time-step
-					double x_step = target_x / N;
-					double next_x = 0;
-					double next_y = 0;
-					double x_add_on = 0;
-
-					// Fill in the rest of the path points, after we already added old points
-					for (unsigned int i = 0; i < PATH_SIZE - prev_size; ++i) {
-						next_x = x_add_on + x_step;
-						next_y = s(next_x);
-						x_add_on = next_x;
-
-						double x_ref = next_x;
-						double y_ref = next_y;
-
-						//Rotate back
-						next_x = (x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw));
-						next_y = (x_ref * sin(ref_yaw) + y_ref * cos(ref_yaw));
-
-						next_x += ref_x;
-						next_y += ref_y;
-
-						next_x_vals.push_back(next_x);
-						next_y_vals.push_back(next_y);
-					}
-					*/
-
-					////////////// END STEP 6   ////////////////////////////////////
-					
 					vector<double> next_x_vals;
 					vector<double> next_y_vals;
 
@@ -619,7 +494,7 @@ int main() {
 						rough_x_traj.push_back(previous_path_x[prev_size - 1]);
 						rough_y_traj.push_back(previous_path_y[prev_size - 1]);
 					}
-					else 
+					else
 					{
 						prev_s = our_veh_s - 1;
 						double prev_x = our_veh_x - cos(our_veh_angle);
@@ -633,7 +508,7 @@ int main() {
 					}
 
 					// Account for bad detection of lane by simulator
-					if (target_d > 8 && our_veh_s > BADRIGHTLANE_S_MIN && our_veh_s < BADRIGHTLANE_S_MAX)
+					if (target_d > 8 && our_veh_s > BADRIGHTLANE_S_MIN&& our_veh_s < BADRIGHTLANE_S_MAX)
 						target_d = 9.4;
 
 					// Other two points of rough trajectory use target_d and current s + 30, current s + 60
@@ -694,6 +569,8 @@ int main() {
 						next_x_vals.push_back(smooth_x_traj[i]);
 						next_y_vals.push_back(smooth_y_traj[i]);
 					}
+
+					////////////// END STEP 6   ////////////////////////////////////
 
 					#ifdef DEBUG_TRAJ
 					double debug_target_s = our_veh.target_s[best_traj_idx];
