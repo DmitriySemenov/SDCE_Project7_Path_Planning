@@ -52,25 +52,30 @@ The highway's waypoints loop around so the frenet s value, distance along the ro
 To complete this project the following approach has been chosen:
 
 Step 0: Generate smooth waypoints near our car. Use spline library.
+
 Step 1: Figure out time offset (to predict other car positions) based on prev path size
-													time_offset = prev_path_size * T_STEP
+	time_offset = prev_path_size * T_STEP
       Initialize our car using end point of prev path converted from (x, y) to (s, d).
       Initialize other cars using sensor fusion data and generate predicitons of positions, starting at time_offset.
+      
 Step 2: Based on our_veh position in (s, d) and other_veh predictions, figure out available operating_state.
          Possible states: Keep Lane(KL), Lane Change Left(LCL), Lane Change Right(LCR)
          Can't do LCL in left most lane (0) and can't do LCR in right most lane(2). 
          Can't make a lane change, if there are cars nearby.
+	 
 Step 3: For each available operating_state generate target positions in (s, d) projected into the future with T = TRAJ_TIME sec.
       For KL : d = middle of car_lane,
       LCL : d = middle of the lane to the left of car_lane
       LCR : d = middle of the lane to the right of car_lane
       For all states : s = project TRAJ_TIME second(s) ahead using current speed and accel, but considering max speed limit.
-
       Using these KL, LCL, LCR targets (s_tgt,d_tgt), for each available state
-      generate a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead, with a S_INCR meters increment step.    
+      generate a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead, with a S_INCR meters increment step.
+      
 Step 4: For each (s_t, d_t) generate JMT coefficients, assuming TRAJ_TIME second(s) time for reaching target. 
+
 Step 5: For each target, generate trajectory using JMT coefficients and calculate total cost using multiple cost functions.
          Find the lowest cost trajectory and use it as target trajectory.
+	 
 Step 6: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
          Use conversion function to convert from (s,d) to (x,y) and smooth out waypoints.
          
@@ -139,6 +144,17 @@ Each cost is weighted differently. Here's the order of costs, based on the highe
 All costs for each trajectory are added up and the lowest cost trajectory is found. It is then used as a target trajectory with corresponding target_s and target_d values.
 
 In final Step 6, target x and y values are generated. Initial idea was to use JMT trajectory generated s and d values and convert them to x and y. However, it turned out that they were not always smooth enough to stay within the acceleration and speed limits, so only final target_s and target_d are used. All the previous steps are still valid, just the way the trajectory is generated differs.
+
+First, rough targets are generated using previous path's two final positions, ego vehicle's s-position + 30, and ego vehicle's s-position + 60 meters. Target d-positions for the last two rough targets are target_d from the trajectory.
+Then, these s and d positions get converted to X and Y targets, using getXY() function.
+
+Target vehicle speed is determined using the difference between target_s and current_s position.
+Then, target_s position for each time step is generated for smooth trajectory using this target velocity and acceleration.
+Acceleration to reach target speed is limited by ACCEL_LIMIT and DECEL_LIMIT, depending if the vehicle is speeding up or slowing down.
+
+Then, spline interpolation is used to generate smooth x and y positions using rough s, x, and y positions and target_s position for each time step.
+
+The new path target points are added to the previous path and the final trajectory is sent back to the simulator.
 
 ## Additional Notes
 
