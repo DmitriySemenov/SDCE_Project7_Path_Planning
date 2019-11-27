@@ -25,6 +25,9 @@ public:
 	vector<string> available_states;
 	vector<double> target_s, target_d;
 	vector<vector<double>> s_traj_coeffs, d_traj_coeffs;
+	double car_ahead_dist[3];
+	double car_behind_dist[3];
+	double car_ahead_spd[3];
 
 	// State predictions for other vehicles
 	vector<Vehicle> predictions;
@@ -37,7 +40,7 @@ public:
 	virtual ~Vehicle();
 
 	// Functions
-	void upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ahead_dist)[3], double (&car_behind_dist)[3]);
+	void upd_closest_veh(const vector<Vehicle>& other_vehs);
 	void upd_lane(double d_curr);
 	void upd_available_states(vector<Vehicle> &other_vehicles);
 	void gen_targets();

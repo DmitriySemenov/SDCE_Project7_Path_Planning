@@ -199,11 +199,6 @@ vector<double> smooth_waypoints(vector<double> frenet_point_s, vector<double> ca
 	vector<double> smooth_points;
 	double start_s = frenet_point_s[0];
 
-	if (frenet_point_s.size() != cart_point.size()) {
-		std::cout << "ERROR DURING SMOOTHING. SIZE MISMATCH" << std::endl;
-		return { 0 };
-	}
-
 	// Start at the first s-point and increment by distance amount of meters to get the next interpolated point
 	for (int i = 0; i < output_size; ++i) {
 		smooth_points.push_back(s(start_s + i * distance));
@@ -211,49 +206,17 @@ vector<double> smooth_waypoints(vector<double> frenet_point_s, vector<double> ca
 	return smooth_points;
 }
 
-/////////////REMOVE THIS LATER/////////////////////////
-void FindClosestCars(vector<vector<double>> sensed_cars, int sensed_cars_count, double main_car_s, double max_s,
-	vector<double>& car_ahead_speed, vector<double>& car_ahead_dist,
-	vector<double>& car_behind_speed, vector<double>& car_behind_dist) {
+vector<double> smooth_traj_points(vector<double> rough_frenet_s, vector<double> rough_cart, vector<double> target_s) {
+	// uses the spline library to generate smooth cartesian trajectory points
 
+	tk::spline spl;
+	spl.set_points(rough_frenet_s, rough_cart);
+	vector<double> smooth_cart;
 
-	// find the closest car ahead and behind our car
-	for (int i = 0; i < sensed_cars_count; ++i) {
-
-		double d = sensed_cars[i][6];
-		double vx = sensed_cars[i][3];
-		double vy = sensed_cars[i][4];
-		double check_car_speed = sqrt(vx * vx + vy * vy);
-		double check_car_s = sensed_cars[i][5];
-		double check_car_dist = max_s;
-
-		// !!!!!!!!! PROTECT FOR MAX_S !!!!!!!!!!!!!!!!!!
-
-		for (int lane = 0; lane < 3; ++lane) {
-			// for every lane, find the car closest ahead and behind of us
-			if (d < (2.0 + 4.0 * lane + 2.0) && d >(2.0 + 4.0 * lane - 2.0)) {
-
-				// car ahead
-				if (check_car_s >= main_car_s) {
-					check_car_dist = check_car_s - main_car_s;
-					if (check_car_dist < car_ahead_dist[lane]) {
-						car_ahead_dist[lane] = check_car_dist;
-						car_ahead_speed[lane] = check_car_speed;
-					}
-				}
-				// car behind
-				else {
-					check_car_dist = main_car_s - check_car_s;
-					if (check_car_dist < car_behind_dist[lane]) {
-						car_behind_dist[lane] = check_car_dist;
-						car_behind_speed[lane] = check_car_speed;
-					}
-				}
-
-			}
-		}
-
+	for (int i = 0; i < target_s.size(); ++i) {
+		smooth_cart.push_back(spl(target_s[i]));
 	}
-
+	return smooth_cart;
 }
+
 #endif  // HELPERS_H

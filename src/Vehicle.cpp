@@ -4,12 +4,13 @@
 #include <algorithm>
 #include <iterator>
 #include <chrono>
-//#include "cost.h"
 
 using std::string;
 using std::vector;
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
+using std::min;
+using std::max;
 
 // Initializes Vehicle
 Vehicle::Vehicle() {
@@ -66,10 +67,8 @@ void Vehicle::upd_available_states(vector<Vehicle> &other_vehicles) {
 	}
 
 	// Find distance to closest other vehicle in each lanes
-	double car_ahead_dist[3] = { MAXIMUM_S, MAXIMUM_S, MAXIMUM_S };
-	double car_behind_dist[3] = { MAXIMUM_S, MAXIMUM_S, MAXIMUM_S };
 
-	upd_closest_veh(other_vehicles, car_ahead_dist, car_behind_dist);
+	upd_closest_veh(other_vehicles);
 
 	// Check if the vehicles in adjacent lanes are far enough to allow lane change
 	// Vehicle is in the middle lane
@@ -96,10 +95,20 @@ void Vehicle::upd_available_states(vector<Vehicle> &other_vehicles) {
 	}
 }
 
-void Vehicle::upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ahead_dist)[3], double (&car_behind_dist)[3]) {
+void Vehicle::upd_closest_veh(const vector<Vehicle>& other_vehs) {
 
 	/* Find the closest car ahead and behind our car at start of prediction time
 		since our car position is at start of predicted position */
+
+	car_ahead_dist[0] = MAXIMUM_S;
+	car_ahead_dist[1] = MAXIMUM_S;
+	car_ahead_dist[2] = MAXIMUM_S;
+	car_behind_dist[0] = MAXIMUM_S;
+	car_behind_dist[1] = MAXIMUM_S;
+	car_behind_dist[2] = MAXIMUM_S;
+	car_ahead_spd[0] = MAX_SPEED;
+	car_ahead_spd[1] = MAX_SPEED;
+	car_ahead_spd[2] = MAX_SPEED;
 
 	for (unsigned int i = 0; i < other_vehs.size(); ++i) {
 
@@ -108,6 +117,20 @@ void Vehicle::upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ah
 		double check_car_s = other_vehs[i].predictions[0].s;
 		double check_car_dist = MAXIMUM_S;
 		double main_car_s = this->s;
+
+		// Account for overrun
+		double min_s = min(check_car_s, main_car_s);
+		double max_s = max(check_car_s, main_car_s);
+		double norm_dist_s = fabs(max_s - min_s);
+		double adj_dist_s = fabs(max_s - (min_s + MAXIMUM_S));
+		double actual_dist_s = min(norm_dist_s, adj_dist_s);
+
+		if (actual_dist_s == adj_dist_s) {
+			if (min_s == check_car_s)
+				check_car_s += MAXIMUM_S;
+			else
+				main_car_s += MAXIMUM_S;
+		}
 
 		for (unsigned int l = 0; l < 3; ++l) {
 			// for every lane, find the car closest ahead and behind us
@@ -118,6 +141,7 @@ void Vehicle::upd_closest_veh(const vector<Vehicle>& other_vehs, double (&car_ah
 					check_car_dist = check_car_s - main_car_s;
 					if (check_car_dist < car_ahead_dist[l]) {
 						car_ahead_dist[l] = check_car_dist;
+						car_ahead_spd[l] = check_car_speed;
 					}
 				}
 				// car behind
@@ -162,7 +186,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i+1) * T_STEP;
-				new_s_dot = std::min(s_dot + MAX_ACCEL/4 * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + ACCEL_LIMIT * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -184,7 +208,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i + 1) * T_STEP;
-				new_s_dot = std::min(s_dot + MAX_ACCEL / 4 * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + ACCEL_LIMIT * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -206,7 +230,7 @@ void Vehicle::gen_targets() {
 
 			for (unsigned int i = 0; i < TRAJ_SIZE; ++i) {
 				t = (i + 1) * T_STEP;
-				new_s_dot = std::min(s_dot + MAX_ACCEL / 5 * t, MAX_SPEED);
+				new_s_dot = std::min(s_dot + ACCEL_LIMIT * t, MAX_SPEED);
 				new_s += new_s_dot * T_STEP;
 
 				// Account for over/underflow
@@ -226,7 +250,7 @@ void Vehicle::gen_targets() {
 void Vehicle::perturb_target(double s_t, double d_t) {
 	// Generate a number of target s and d coordinates
 
-	for (int i = S_NEG_OFF; i < S_POS_OFF; ++i) {
+	for (int i = S_NEG_OFF; i < S_POS_OFF; i += S_INCR) {
 		double s_tgt = s_t + i;
 		double d_tgt = d_t;
 
@@ -276,7 +300,7 @@ void Vehicle::generate_coeffs_for_targets() {
 		if (tgt_s < s)
 			tgt_s += MAXIMUM_S;
 
-		double tgt_s_dot = (target_s[i] - s) / TRAJ_TIME;
+		double tgt_s_dot = (tgt_s - s) / TRAJ_TIME;
 
 		vector<double> start_s = { s, s_dot, s_doubledot };
 		vector<double> end_s = { tgt_s, tgt_s_dot, 0 };
