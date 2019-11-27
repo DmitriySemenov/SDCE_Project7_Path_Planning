@@ -1,13 +1,5 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
-### Simulator.
-You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).  
-
-To run the simulator on Mac/Linux, first make the binary file executable with the following command:
-```shell
-sudo chmod u+x {simulator_file_name}
-```
 
 ### Goals
 In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 10 m/s^3.
@@ -17,21 +9,12 @@ Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoi
 
 The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
 
-## Basic Build Instructions
-
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
-
-Here is the data provided from the Simulator to the C++ Program
-
 #### Main car's localization Data (No Noise)
 
 ["x"] The car's x position in map coordinates
 
 ["y"] The car's y position in map coordinates
-
+-
 ["s"] The car's s position in frenet coordinates
 
 ["d"] The car's d position in frenet coordinates
@@ -41,9 +24,6 @@ Here is the data provided from the Simulator to the C++ Program
 ["speed"] The car's speed in MPH
 
 #### Previous path data given to the Planner
-
-//Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
 
 ["previous_path_x"] The previous list of x points previously given to the simulator
 
@@ -59,87 +39,113 @@ the path has processed since last time.
 
 ["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
 
-## Details
+## Requirements Overview
+- The car is able to drive at least 4.32 miles without incident.
+- The car drives according to the speed limit.
+- Max Acceleration and Jerk are not Exceeded.
+- The car must not come into contact with any of the other cars on the road.
+- The car stays in its lane, except for the time between changing lanes.
+- The car is able to change lanes.
 
-1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
+## Implementation Overview
 
-2. There will be some latency between the simulator running and the path planner returning a path, with optimized code usually its not very long maybe just 1-3 time steps. During this delay the simulator will continue using points that it was last given, because of this its a good idea to store the last points you have used so you can have a smooth transition. previous_path_x, and previous_path_y can be helpful for this transition since they show the last points given to the simulator controller with the processed points already removed. You would either return a path that extends this previous path or make sure to create a new path that has a smooth transition with this last path.
+To complete this project the following approach has been chosen:
 
-## Tips
+Step 0: Generate smooth waypoints near our car. Use spline library.
+Step 1: Figure out time offset (to predict other car positions) based on prev path size
+													time_offset = prev_path_size * T_STEP
+      Initialize our car using end point of prev path converted from (x, y) to (s, d).
+      Initialize other cars using sensor fusion data and generate predicitons of positions, starting at time_offset.
+Step 2: Based on our_veh position in (s, d) and other_veh predictions, figure out available operating_state.
+         Possible states: Keep Lane(KL), Lane Change Left(LCL), Lane Change Right(LCR)
+         Can't do LCL in left most lane (0) and can't do LCR in right most lane(2). 
+         Can't make a lane change, if there are cars nearby.
+Step 3: For each available operating_state generate target positions in (s, d) projected into the future with T = TRAJ_TIME sec.
+      For KL : d = middle of car_lane,
+      LCL : d = middle of the lane to the left of car_lane
+      LCR : d = middle of the lane to the right of car_lane
+      For all states : s = project TRAJ_TIME second(s) ahead using current speed and accel, but considering max speed limit.
 
-A really helpful resource for doing this project and creating smooth trajectories was using http://kluge.in-chemnitz.de/opensource/spline/, the spline function is in a single hearder file is really easy to use.
+      Using these KL, LCL, LCR targets (s_tgt,d_tgt), for each available state
+      generate a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead, with a S_INCR meters increment step.    
+Step 4: For each (s_t, d_t) generate JMT coefficients, assuming TRAJ_TIME second(s) time for reaching target. 
+Step 5: For each target, generate trajectory using JMT coefficients and calculate total cost using multiple cost functions.
+         Find the lowest cost trajectory and use it as target trajectory.
+Step 6: Add on new targets to the prev_path existing ones, until reaching PATH_SIZE number of target points. 
+         Use conversion function to convert from (s,d) to (x,y) and smooth out waypoints.
+         
+## Implementation Details
+First step (or actually Step 0) is to generate smooth waypoints near our car using the spline library.
+This helps the car avoid jerking and drive smoothly.
+The smooth_waypoints() function that does the interpolation can be found in the helpers.h 
 
----
+In Step 1, our_veh object (representing the ego vehicle) of class Vehicle is updated with the latest predictions for position, velocity, and acceleration in frenet coordinate system. These predictions start from the point at the end of the previous path, if enough points are available to recreate the values. 
 
-## Dependencies
+At the same time, vector of Vehicle objects representing all the other vehicles detected by sensor fusion is created and initialized.
+For each other vehicle, trajectory predictions are made using generate_predictions() function, starting from the time offset:
+      time_offset = prev_path_size * T_STEP
+This is done because ego vehicle's trajectory will be generated starting from time_offset as well.
 
-* cmake >= 3.5
-  * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets 
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
+In Step 2, available operating states for ego vehicle are updated.
+Possible states are: Keep Lane (KL), Lane Change Left (LCL), and Lane Change Right (LCR).
 
-## Editor Settings
+KL state is always available. The other two states depend on whether there is a lane to change to and if there is a nearby car in that lane. This is handled by Vehicle's class upd_available_states() function.
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+In Step 3, for each available operating state, target positions in (s, d) are generated. They are projected TRAJ_TIME second(s) into the future. Here are how the targets are generated using gen_targets() function:
+   For KL : d = middle of car_lane
+      LCL : d = middle of the lane to the left of car_lane
+      LCR : d = middle of the lane to the right of car_lane
+   For all states : s = projected TRAJ_TIME second(s) ahead using current speed and acceleration, considering max speed limit.
+This gives a maximum of 3 target pairs (s_tgt, d_tgt).
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+Using these targets (s_tgt,d_tgt), for each available state, a few other targets up to S_NEG_OFF meters behind and S_POS_OFF meters ahead are generated, with a S_INCR meters increment step. This is done by perturb_target() function. This is done to allow the vehicle a chance to slow down or speed up, depending which target has the lowest cost function value.
 
-## Code Style
+In Step 4, for each target pair (s, d), generate_coeffs_for_targets() function is used to create Jerk Minimizing Trajectory coefficients for s and d dimension. It's assumed that vehicle starts with the state predicted at the end of previous path and needs to reach target_s and target_d in TRAJ_TIME second(s).
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+Step 5 is a key step where best trajectory and corresponding set of target_s and target_d is generated.
+For each target pair, a trajectory is generated using JMT coefficients and a generate_traj_for_target() function.
+Next, a number of cost functions are calculated for each trajectory. These functions include:
 
-## Project Instructions and Rubric
+- collision_cost(): Uses nearest_approach_to_vehicle_in_lane() function to calculate the closest ego vehicle gets to other vehicles. If the nearest vehicle is less than (2 * VEH_RADIUS) meters away, a cost penalty is applied.
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+- buffer_cost(): Uses nearest_s_dist_to_vehicle_in_lane() function to generate a cost based on how far ahead other vehicles in the lane are in relation to the ego vehicle. This penalizes trajectories which have vehicles closer to ego vehicle. This is a non-binary cost.
 
+- not_middle_lane_cost(): This cost function applies a slight penalty to trajectories that don't end up in the middle lane. The idea is that it is easier to make lane changes from the middle lane, since both left and right lane are potentially available.
 
-## Call for IDE Profiles Pull Requests
+- too_close_cost(): This cost function applies a penalty that kicks in when ego vehicle gets within 6 * VEH_RADIUS meters of the vehicle ahead during the trajectory. The cost increases as the distance shortens.
 
-Help your fellow students!
+- exceeds_speed_limit_cost(): This cost function penalizes trajectories that exceed the maximum speed limit. 
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
+- high_spd_cost(): This function increases cost for trajectories the farther away they are from the maximum speed limit. This helps pick trajectory that will result in vehicle going the fastest.
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+- exceeds_accel_limit_cost(): Penalizes trajectories that exceed acceleration limits.
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+- not_fastest_lane_cost(): Penalizes trajectories that are in the lane that does not have the fastest speed (based on the speed of the vehicle ahead).
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
+- diffd_cost(): Penalizes changes in target_d, compared to previous target_d. This helps minimize target lane (corresponding to target_d) from switching too often.
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
+Each cost is weighted differently. Here's the order of costs, based on the highest weight:
 
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+   1) collision_cost
+   2) too_close_cost
+   3) exceeds_speed_limit_cost
+   4) exceeds_accel_limit_cost
+   5) high_spd_cost
+   6) not_fastest_lane_cost
+   7) buffer_cost
+   8) diffd_cost
+   9) not_middle_lane_cost
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+All costs for each trajectory are added up and the lowest cost trajectory is found. It is then used as a target trajectory with corresponding target_s and target_d values.
 
+In final Step 6, target x and y values are generated. Initial idea was to use JMT trajectory generated s and d values and convert them to x and y. However, it turned out that they were not always smooth enough to stay within the acceleration and speed limits, so only final target_s and target_d are used. All the previous steps are still valid, just the way the trajectory is generated differs.
+
+## Additional Notes
+
+Simulator sometimes incorrectly detects vehicle being out of lane when vehicle is in the right most lane. This happens between s-coordinate 4850 and s-coordinate 5150 (approximately). There is a special piece of code that checks for that and adjusts d-target slightly from 10 (middle of right lane) to 9.4, to avoid this issue.
+
+Throughout the implementation care is taken to account for overflow of s-coordinate. This is especially important when calculating distance to the vehicle up ahead, calculating velocity, or generating a new target_s position.
+
+There are debug outputs that are saved in a separate csv file that are available, if that functionality is enabled. Corresponding defines are located in the debug.h header file.
+
+Target maximum velocity is set slightly lower than 50 MPH, because the actual vehicle speed fluctuates slightly around the target. This is mostly due to inaccuracy of converting between frenet and cartesian coordinates.
